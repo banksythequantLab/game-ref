@@ -107,3 +107,53 @@ ul.house, ul.history, ol.rulebook { list-style: none; padding: 0; margin: 8px 0 
 iframe.search-widget { width: 100%; border: 0; height: 64px; margin-top: 8px; background: transparent; }
 details summary { list-style: none; cursor: pointer; }
 footer { text-align: center; padding: 20px; }
+
+/* ---------------- Zeb the Ref ---------------- */
+.brand-zeb { width: 46px; height: 56px; display: inline-block; }
+.brand-zeb svg { width: 100%; height: 100%; }
+.stage { display: flex; align-items: flex-end; gap: 6px; margin: -4px 0 10px; min-height: 180px; }
+.zeb-stage { width: 160px; flex: none; }
+.zeb-stage svg { width: 160px; height: auto; display: block; }
+.bubble {
+  position: relative; background: #fff; color: #111; border-radius: 16px; padding: 12px 16px;
+  font-weight: 700; font-size: 1.05rem; margin-bottom: 90px; max-width: 520px;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
+}
+.bubble::before {
+  content: ""; position: absolute; left: -12px; bottom: 14px;
+  border: 8px solid transparent; border-right: 14px solid #fff; border-left: 0;
+}
+.bubble.yes { background: #dff7e9; } .bubble.yes::before { border-right-color: #dff7e9; }
+.bubble.no { background: #ffe1e1; } .bubble.no::before { border-right-color: #ffe1e1; }
+.bubble.depends { background: #fff1d6; } .bubble.depends::before { border-right-color: #fff1d6; }
+.bubble.appeal, .bubble.overturned, .bubble.upheld { background: #efe6ff; }
+.bubble.appeal::before, .bubble.overturned::before, .bubble.upheld::before { border-right-color: #efe6ff; }
+.bubble.pop { animation: pop 0.35s ease-out; }
+@keyframes pop { 0% { transform: scale(0.85); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+.zeb * { transform-box: view-box; }
+.zeb.idle .zeb-head { animation: bob 3s ease-in-out infinite; transform-origin: 100px 130px; }
+.zeb.thinking .zeb-head { animation: tilt 1.2s ease-in-out infinite alternate; transform-origin: 100px 130px; }
+.zeb.thinking .zeb-dots circle { animation: blink 1.2s infinite; }
+.zeb.thinking .zeb-dots circle:nth-child(2) { animation-delay: 0.2s; }
+.zeb.thinking .zeb-dots circle:nth-child(3) { animation-delay: 0.4s; }
+.zeb.yes, .zeb.upheld { animation: hop 0.55s ease-out; }
+.zeb .zeb-arm-up { transform-origin: 136px 146px; animation: raise 0.45s cubic-bezier(.2,1.6,.5,1); }
+.zeb.no .zeb-card { transform-origin: 165px 80px; animation: shake 0.18s 3 0.45s; }
+.zeb.no .zeb-tweet, .zeb.yes .zeb-spark { animation: pop 0.4s ease-out both 0.3s; }
+.zeb.depends .zeb-q { animation: bob 1.4s ease-in-out infinite; transform-origin: 175px 50px; }
+.zeb.appeal .zeb-screen path { animation: blink 0.9s infinite; }
+.zeb.overturned { animation: spin 0.6s ease-out; transform-origin: 100px 120px; }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes tilt { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+@keyframes blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+@keyframes hop { 0% { transform: translateY(0); } 40% { transform: translateY(-14px); } 70% { transform: translateY(0); } 85% { transform: translateY(-4px); } 100% { transform: translateY(0); } }
+@keyframes raise { from { transform: rotate(70deg); } to { transform: rotate(0); } }
+@keyframes shake { 0%, 100% { transform: rotate(0); } 33% { transform: rotate(-9deg); } 66% { transform: rotate(9deg); } }
+@keyframes spin { from { transform: rotateY(180deg); } to { transform: rotateY(0); } }
+@media (prefers-reduced-motion: reduce) { .zeb, .zeb * , .bubble { animation: none !important; } }
+@media (max-width: 560px) {
+  .zeb-stage, .zeb-stage svg { width: 96px; }
+  .stage { min-height: 112px; }
+  .bubble { font-size: 0.95rem; margin-bottom: 48px; }
+}

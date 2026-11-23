@@ -5,6 +5,7 @@ import { listGames, saveGame, deleteGame, type Game, type HouseRule } from "./st
 import { SAMPLES } from "./samples";
 import { gameFromPdf, gameFromText } from "./ingest";
 import { callIt, appeal, needsAppeal, findVariations, type Ruling } from "./referee";
+import { zeb, line, whistle, type Mood } from "./mascot";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) =>
@@ -14,6 +15,43 @@ let games: Game[] = [];
 let game: Game;
 let photo: Part | undefined;
 const history: { gameId: string; r: Ruling }[] = [];
+
+// ---------------- Zeb the Ref ----------------
+function setZeb(mood: Mood, text = line(mood)) {
+  $("zeb-stage").innerHTML = zeb(mood);
+  const b = $("zeb-bubble");
+  b.className = `bubble ${mood}`;
+  b.textContent = text;
+  void b.offsetWidth; // restart the pop animation
+  b.classList.add("pop");
+}
+const verdictMood = (r: Ruling): Mood => (r.verdict === "YES" ? "yes" : r.verdict === "NO" ? "no" : "depends");
+function react(r: Ruling, first?: Ruling) {
+  if (first) {
+    const reversed = first.verdict !== r.verdict;
+    setZeb(reversed ? "overturned" : "upheld");
+    whistle(reversed ? 2 : 1);
+    return;
+  }
+  const mood = verdictMood(r);
+  setZeb(mood);
+  if (mood === "no") whistle(2);
+  else if (mood === "yes") whistle(1);
+}
+
+function renderMute() {
+  let muted = false;
+  try { muted = localStorage.getItem("gameref:muted") === "1"; } catch { /* ignore */ }
+  $("btn-mute").textContent = muted ? "🔇 Whistle off" : "🔊 Whistle on";
+}
+$("btn-mute").onclick = () => {
+  try {
+    const muted = localStorage.getItem("gameref:muted") === "1";
+    localStorage.setItem("gameref:muted", muted ? "0" : "1");
+    if (muted) whistle(1);
+  } catch { /* ignore */ }
+  renderMute();
+};
 
 // ---------------- status chips ----------------
 async function refreshStatus() {
@@ -77,6 +115,7 @@ function selectGame(id: string) {
   $("btn-delete").classList.toggle("hidden", game.origin === "sample");
   $("ruling").innerHTML = "";
   $("variations-out").innerHTML = "";
+  setZeb("idle", `I'm Zeb. Ask me anything about ${game.name}.`);
   renderHouse();
   renderRulebook();
   renderHistory();
@@ -199,12 +238,15 @@ let lastPhoto: Part | undefined;
 async function runAppeal(first: Ruling) {
   const box = $("ruling");
   box.insertAdjacentHTML("beforeend", `<div class="thinking" id="appeal-thinking">Sending it up to the cloud appeals referee (full rulebook)</div>`);
+  setZeb("appeal");
   try {
     const r = await appeal(game, first, lastPhoto);
     box.innerHTML = rulingHtml(r, first);
     pushHistory(r);
+    react(r, first);
   } catch (e) {
     $("appeal-thinking")?.remove();
+    setZeb("depends", "The replay booth is down. The first call stands for now.");
     box.insertAdjacentHTML("beforeend", `<p class="error">Appeal failed: ${esc((e as Error).message)}</p>`);
   }
 }
@@ -216,14 +258,17 @@ $("btn-call").onclick = async () => {
   const box = $("ruling");
   btn.disabled = true;
   box.innerHTML = `<div class="thinking">The ref is checking ${game.sections.length} rules</div>`;
+  setZeb("thinking");
   try {
     lastPhoto = photo;
     const r = await callIt(game, q, photo, () => {
       box.innerHTML = `<div class="thinking">On-device model is still warming up - handing this call to the cloud</div>`;
+      setZeb("thinking", "My on-device brain is still warming up - phoning the cloud!");
     });
     lastFirst = r;
     box.innerHTML = rulingHtml(r);
     pushHistory(r);
+    react(r);
     $("btn-appeal")?.addEventListener("click", () => runAppeal(r));
     if (needsAppeal(r, !!lastPhoto) && navigator.onLine) {
       const why = lastPhoto ? "Photo ruling - getting a second look from the cloud referee." : "Low confidence on the first call - escalating automatically.";
@@ -232,6 +277,7 @@ $("btn-call").onclick = async () => {
     }
   } catch (e) {
     box.innerHTML = `<p class="error">${esc(friendly(e))}</p>`;
+    setZeb("depends", "I couldn't make that call. Try asking again.");
   }
   btn.disabled = false;
   refreshStatus();
@@ -359,6 +405,11 @@ function renderRulebook() {
 
 // ---------------- boot ----------------
 (async () => {
+  $("brand-zeb").innerHTML = zeb("idle", { headOnly: true });
+  const icon = document.querySelector<HTMLLinkElement>("link[rel=icon]");
+  if (icon) icon.href = "data:image/svg+xml," + encodeURIComponent(zeb("idle", { headOnly: true }));
+  renderMute();
+  setZeb("idle");
   refreshStatus();
   await loadSettings();
   await loadLibrary();

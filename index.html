@@ -9,11 +9,12 @@
   </head>
   <body>
     <header class="top">
-      <div class="brand"><img src="/whistle.svg" alt="" width="34" height="34" /><div><h1>Game Ref</h1><p>Every rule. Every variation. Instant calls.</p></div></div>
+      <div class="brand"><span id="brand-zeb" class="brand-zeb"></span><div><h1>Game Ref</h1><p>Zeb the Ref knows every rule. Every variation. Instant calls.</p></div></div>
       <div class="chips">
         <span id="chip-device" class="chip">On-device: checking...</span>
         <span id="chip-net" class="chip">...</span>
         <button id="btn-download" class="small hidden">Download on-device model</button>
+        <button id="btn-mute" class="small ghost" aria-label="Toggle whistle sound">🔊 Whistle on</button>
       </div>
     </header>
 
@@ -42,7 +43,8 @@
       </section>
 
       <section class="card ask">
-        <h2>Ask the Ref</h2>
+        <div class="stage"><div id="zeb-stage" class="zeb-stage"></div><div id="zeb-bubble" class="bubble" aria-live="polite"></div></div>
+        <h2>Ask Zeb</h2>
         <textarea id="question" rows="3" placeholder="e.g. My pawn just reached the last rank - can I take a second queen?"></textarea>
         <div class="row">
           <label class="file" id="photo-label">📷 Photo of the board<input id="photo" type="file" accept="image/*" capture="environment" /></label>
