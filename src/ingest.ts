@@ -3,7 +3,7 @@
 // Offline or cloud failure: pdf.js extracts the text on this device and we split it locally.
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { ingestModel } from "./firebase";
+import { ingestModel, retrying } from "./firebase";
 import { slug, type Game, type Section } from "./store";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -79,10 +79,8 @@ async function pdfViaCloud(file: File, name: string): Promise<Section[]> {
 Use the book's own numbering for ids when it has one (e.g. "4.2"); otherwise number sections 1, 2, 3...
 Keep the rule wording faithful and complete but drop flavor text, art captions and page furniture.
 Each section should cover one rule or topic and be under 180 words. Include setup, turn structure, scoring, end of game, and any FAQ or clarifications printed in the book.`;
-  const res = await ingestModel().generateContent([
-    prompt,
-    { type: "inlineData", inlineData: { mimeType: "application/pdf", data: await fileToBase64(file) } },
-  ]);
+  const pdfPart = { type: "inlineData" as const, inlineData: { mimeType: "application/pdf", data: await fileToBase64(file) } };
+  const res = await retrying(() => ingestModel().generateContent([prompt, pdfPart]));
   const j = JSON.parse(res.response.text());
   const sections: Section[] = (j.sections ?? [])
     .map((s: Section, i: number) => ({ id: String(s.id || i + 1), title: String(s.title || ""), text: String(s.text || "") }))

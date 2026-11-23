@@ -200,7 +200,9 @@ $("btn-call").onclick = async () => {
   box.innerHTML = `<div class="thinking">The ref is checking ${game.sections.length} rules</div>`;
   try {
     lastPhoto = photo;
-    const r = await callIt(game, q, photo);
+    const r = await callIt(game, q, photo, () => {
+      box.innerHTML = `<div class="thinking">On-device model is still warming up - handing this call to the cloud</div>`;
+    });
     lastFirst = r;
     box.innerHTML = rulingHtml(r);
     pushHistory(r);
@@ -257,7 +259,7 @@ function renderHouse() {
     ? game.houseRules
         .map(
           (h) => `<li><input type="checkbox" data-id="${esc(h.id)}" ${h.active ? "checked" : ""} aria-label="Use ${esc(h.name)}" />
-        <div class="txt"><span class="name">${esc(h.name)}</span><span class="tag">${h.source === "found" ? "found by search" : "custom"}</span><div class="muted">${esc(h.text)}</div></div>
+        <div class="txt"><span class="name">${esc(h.name)}</span><span class="tag">${h.source === "found" ? "found variation" : "custom"}</span><div class="muted">${esc(h.text)}</div></div>
         <button class="ghost small" data-del="${esc(h.id)}" aria-label="Delete">✕</button></li>`
         )
         .join("")
@@ -307,6 +309,7 @@ $("btn-variations").onclick = async () => {
             )
             .join("")
         : `<p class="muted">No variations found.</p>`) +
+      (v.grounded ? "" : `<p class="muted">From Gemini's knowledge (web search unavailable right now) - double-check official FAQs.</p>`) +
       (v.sources.length
         ? `<div class="sources">Sources: ${v.sources.slice(0, 6).map((s) => `<a href="${esc(s.uri)}" target="_blank" rel="noopener">${esc(s.title || "source")}</a>`).join("")}</div>`
         : "") +

@@ -26,7 +26,9 @@ export const app = initializeApp(firebaseConfig);
 
 // App Check is required by Firebase AI Logic. Debug mode prints a token for localhost testing.
 if (env.VITE_APPCHECK_DEBUG === "true") {
-  (self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN: boolean }).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+  // A pre-registered token from .env (gitignored), or `true` to have the SDK print a new one.
+  (self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN: string | boolean }).FIREBASE_APPCHECK_DEBUG_TOKEN =
+    env.VITE_APPCHECK_DEBUG_TOKEN || true;
 }
 if (env.VITE_RECAPTCHA_SITE_KEY) {
   initializeAppCheck(app, {
@@ -110,6 +112,35 @@ export function refereeModel(): GenerativeModel {
   }));
 }
 
+/** Retry cloud calls that fail with temporary capacity errors (429 / 500 / 503). */
+export async function retrying<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = String((e as Error)?.message ?? e);
+      if (i >= tries - 1 || !/\[(429|500|503) ?\]|high demand|overloaded|unavailable/i.test(msg)) throw e;
+      await new Promise((r) => setTimeout(r, 1500 * 2 ** i));
+    }
+  }
+}
+
+let _cloudReferee: GenerativeModel | null = null;
+/** Same referee, cloud only - used when the on-device model stalls. */
+export function cloudRefereeModel(): GenerativeModel {
+  return (_cloudReferee ??= getGenerativeModel(ai, {
+    mode: InferenceMode.ONLY_IN_CLOUD,
+    inCloudParams: {
+      model: settings.cloud_model,
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: "application/json",
+        responseSchema: rulingSchema,
+      },
+    },
+  }));
+}
+
 /** Appeals court: always cloud, reads the entire rulebook plus the first ruling. */
 export function appealsModel(): GenerativeModel {
   return (_appeals ??= getGenerativeModel(ai, {
@@ -146,6 +177,15 @@ export function variationsModel(): GenerativeModel {
   return (_variations ??= getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_IN_CLOUD,
     inCloudParams: { model: settings.cloud_model, tools: [{ googleSearch: {} }] },
+  }));
+}
+
+let _plain: GenerativeModel | null = null;
+/** Plain cloud text model (no tools) - fallback when search grounding has no quota. */
+export function plainCloudModel(): GenerativeModel {
+  return (_plain ??= getGenerativeModel(ai, {
+    mode: InferenceMode.ONLY_IN_CLOUD,
+    inCloudParams: { model: settings.cloud_model },
   }));
 }
 

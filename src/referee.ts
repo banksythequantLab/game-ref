@@ -1,6 +1,6 @@
 // The referee: on-device first rulings, cloud appeals, and cloud variation scouting.
 import type { Part } from "firebase/ai";
-import { refereeModel, appealsModel, variationsModel, settings } from "./firebase";
+import { refereeModel, cloudRefereeModel, appealsModel, variationsModel, plainCloudModel, settings, retrying } from "./firebase";
 import { retrieve, type Game, type Section, type HouseRule } from "./store";
 
 export type Verdict = "ALLOWED" | "NOT_ALLOWED" | "DEPENDS";
@@ -64,17 +64,35 @@ function withPhoto(prompt: string, photo?: Part): string | (string | Part)[] {
   return photo ? [prompt, photo] : prompt;
 }
 
-/** First ruling. Runs on Gemini Nano when Chrome has it, otherwise in the cloud (SDK decides). */
-export async function callIt(game: Game, question: string, photo?: Part): Promise<Ruling> {
+const ON_DEVICE_TIMEOUT_MS = 30_000;
+
+/** First ruling. Runs on Gemini Nano when Chrome has it, otherwise in the cloud (SDK decides).
+ *  If the on-device model stalls (cold start, busy GPU) and we're online, the cloud takes the call. */
+export async function callIt(game: Game, question: string, photo?: Part, onSlow?: () => void): Promise<Ruling> {
   const consulted = retrieve(game, question);
+  const request = withPhoto(refereePrompt(game, consulted, question, !!photo), photo);
   const t0 = performance.now();
-  const res = await refereeModel().generateContent(
-    withPhoto(refereePrompt(game, consulted, question, !!photo), photo)
-  );
+  const primary = refereeModel().generateContent(request);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stalled = new Promise<"stalled">((resolve) => {
+    timer = setTimeout(() => resolve("stalled"), ON_DEVICE_TIMEOUT_MS);
+  });
+  let res = await Promise.race([primary, stalled]);
+  clearTimeout(timer);
+  let fellBack = false;
+  if (res === "stalled") {
+    if (!navigator.onLine) res = await primary; // offline: keep waiting for the device
+    else {
+      onSlow?.();
+      primary.catch(() => {}); // let the slow on-device call finish quietly
+      res = await retrying(() => cloudRefereeModel().generateContent(request));
+      fellBack = true;
+    }
+  }
   const ms = Math.round(performance.now() - t0);
   return {
     ...parse(res.response.text()),
-    source: res.response.inferenceSource === "in_cloud" ? "in_cloud" : "on_device",
+    source: fellBack || res.response.inferenceSource === "in_cloud" ? "in_cloud" : "on_device",
     stage: "first",
     ms,
     question,
@@ -99,7 +117,7 @@ A first ruling was made from a partial reading of the rules:
 verdict=${first.verdict}; ruling="${first.ruling}"; cited=${first.citedRuleIds.join(", ") || "none"}.
 You are the appeals referee. Review the complete rulebook, then uphold or overturn it.`;
   const t0 = performance.now();
-  const res = await appealsModel().generateContent(withPhoto(prompt, photo));
+  const res = await retrying(() => appealsModel().generateContent(withPhoto(prompt, photo)));
   const ms = Math.round(performance.now() - t0);
   const parsed = parse(res.response.text());
   const ids = new Set(parsed.citedRuleIds);
@@ -120,6 +138,7 @@ export interface Variation {
 }
 export interface VariationResult {
   variations: Variation[];
+  grounded: boolean;
   searchWidgetHtml?: string;
   sources: { title: string; uri: string }[];
 }
@@ -129,7 +148,18 @@ export async function findVariations(game: Game): Promise<VariationResult> {
   const prompt = `Search for the official variants, official FAQ or errata rulings, and the most popular house rules for the game "${game.name}".
 Return 5 to 12 items. Output ONLY lines in exactly this format, nothing else:
 VARIANT | <short name> | <one or two sentences describing exactly how play changes>`;
-  const res = await variationsModel().generateContent(prompt);
+  let res;
+  let grounded = true;
+  try {
+    res = await variationsModel().generateContent(prompt);
+  } catch (e) {
+    // Search grounding needs paid quota; fall back to Gemini's own knowledge and say so.
+    console.warn("Grounded search unavailable, using model knowledge", e);
+    grounded = false;
+    res = await retrying(() =>
+      plainCloudModel().generateContent(prompt.replace("Search for", "From your knowledge, list"))
+    );
+  }
   const variations = res.response
     .text()
     .split("\n")
@@ -141,6 +171,7 @@ VARIANT | <short name> | <one or two sentences describing exactly how play chang
   const gm = res.response.candidates?.[0]?.groundingMetadata;
   return {
     variations,
+    grounded,
     searchWidgetHtml: gm?.searchEntryPoint?.renderedContent,
     sources: (gm?.groundingChunks ?? [])
       .map((c) => ({ title: c.web?.title ?? "", uri: c.web?.uri ?? "" }))
