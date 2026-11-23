@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Game Ref - an AI referee that knows every rule and variation. Rulings run on your device with Gemini Nano; tough calls go to the cloud." />
+    <title>Game Ref</title>
+    <link rel="icon" href="/whistle.svg" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand"><img src="/whistle.svg" alt="" width="34" height="34" /><div><h1>Game Ref</h1><p>Every rule. Every variation. Instant calls.</p></div></div>
+      <div class="chips">
+        <span id="chip-device" class="chip">On-device: checking...</span>
+        <span id="chip-net" class="chip">...</span>
+        <button id="btn-download" class="small hidden">Download on-device model</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="card game-bar">
+        <label for="game-select">Game</label>
+        <select id="game-select"></select>
+        <button id="btn-add" class="ghost">+ Add rulebook</button>
+        <button id="btn-delete" class="ghost danger hidden">Remove</button>
+        <span id="game-meta" class="muted"></span>
+      </section>
+
+      <section class="card add-panel hidden" id="add-panel">
+        <h2>Add a rulebook</h2>
+        <input id="add-name" placeholder="Game name (e.g. Catan, Uno, Pickleball)" />
+        <div class="row">
+          <label class="file">PDF rulebook<input id="add-pdf" type="file" accept="application/pdf" /></label>
+          <span class="muted">or paste the rules as text:</span>
+        </div>
+        <textarea id="add-text" rows="6" placeholder="Paste rules here (processed entirely on this device)"></textarea>
+        <div class="row">
+          <button id="btn-add-go">Add to library</button>
+          <button id="btn-add-cancel" class="ghost">Cancel</button>
+          <span id="add-status" class="muted"></span>
+        </div>
+      </section>
+
+      <section class="card ask">
+        <h2>Ask the Ref</h2>
+        <textarea id="question" rows="3" placeholder="e.g. My pawn just reached the last rank - can I take a second queen?"></textarea>
+        <div class="row">
+          <label class="file" id="photo-label">📷 Photo of the board<input id="photo" type="file" accept="image/*" capture="environment" /></label>
+          <img id="photo-preview" class="hidden" alt="Attached game photo" />
+          <button id="photo-clear" class="ghost small hidden">Remove photo</button>
+          <span class="spacer"></span>
+          <button id="btn-call" class="primary">🟨 Call it</button>
+        </div>
+        <div id="ruling"></div>
+      </section>
+
+      <section class="card">
+        <div class="row between">
+          <h2>House rules &amp; variations</h2>
+          <button id="btn-variations" class="ghost">🔎 Find variations</button>
+        </div>
+        <p class="muted">Active house rules override the book in every ruling.</p>
+        <ul id="house-list" class="house"></ul>
+        <div class="row">
+          <input id="house-name" placeholder="House rule name" />
+          <input id="house-text" placeholder="What changes" class="grow" />
+          <button id="btn-house-add" class="ghost">Add</button>
+        </div>
+        <div id="variations-out"></div>
+      </section>
+
+      <section class="card">
+        <details>
+          <summary><h2>Rulebook</h2></summary>
+          <ol id="rulebook" class="rulebook"></ol>
+        </details>
+      </section>
+
+      <section class="card">
+        <h2>Recent calls</h2>
+        <ul id="history" class="history"></ul>
+      </section>
+    </main>
+
+    <footer class="muted">Built with Firebase AI Logic hybrid inference · Gemini Nano on-device, Gemini in the cloud</footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
