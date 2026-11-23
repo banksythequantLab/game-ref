@@ -151,16 +151,34 @@ function sourceBadge(r: Ruling): string {
 }
 
 function rulingHtml(r: Ruling, first?: Ruling): string {
-  const label = { ALLOWED: "✅ ALLOWED", NOT_ALLOWED: "⛔ NOT ALLOWED", DEPENDS: "⚠️ DEPENDS" }[r.verdict];
+  const label = { YES: "✅ YES", NO: "⛔ NO", DEPENDS: "⚠️ IT DEPENDS" }[r.verdict];
   const byId = new Map(game.sections.map((s) => [s.id, s]));
+  // Models often cite sub-rules ("7.2") inside a section stored as "7" - resolve to the closest section.
+  const resolve = (raw: string) => {
+    const id = raw.replace(/^[[§\s]+|[\]\s]+$/g, "");
+    if (byId.has(id)) return byId.get(id);
+    const parts = id.split(".");
+    for (let n = parts.length - 1; n > 0; n--) {
+      const s = byId.get(parts.slice(0, n).join("."));
+      if (s) return s;
+    }
+    return game.sections.find((s) => s.text.includes(`${id} `));
+  };
+  const seen = new Set<string>();
   const cites = r.citedRuleIds
+    .filter((id) => {
+      const key = id.toUpperCase() === "HOUSE" ? "HOUSE" : resolve(id)?.id ?? id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .map((id) => {
       if (id.toUpperCase() === "HOUSE") {
         const on = game.houseRules.filter((h) => h.active);
         return `<details><summary>House rules</summary><div class="cite-text">${esc(on.map((h) => `${h.name}: ${h.text}`).join("\n") || "none active")}</div></details>`;
       }
-      const s = byId.get(id.replace(/^[[§\s]+|[\]\s]+$/g, ""));
-      return s ? `<details><summary>Rule ${esc(s.id)} · ${esc(s.title)}</summary><div class="cite-text">${esc(s.text)}</div></details>` : "";
+      const s = resolve(id);
+      return s ? `<details><summary>Rule ${esc(id)} · ${esc(s.title)}</summary><div class="cite-text">${esc(s.text)}</div></details>` : "";
     })
     .join("");
   const overturned = first && first.verdict !== r.verdict ? `<p class="muted">Appeal overturned the first call (${esc(first.verdict.replace("_", " "))}).</p>` : first ? `<p class="muted">Appeal upheld the first call.</p>` : "";
@@ -207,8 +225,9 @@ $("btn-call").onclick = async () => {
     box.innerHTML = rulingHtml(r);
     pushHistory(r);
     $("btn-appeal")?.addEventListener("click", () => runAppeal(r));
-    if (needsAppeal(r) && navigator.onLine) {
-      box.insertAdjacentHTML("beforeend", `<p class="muted">Low confidence on the first call - escalating automatically.</p>`);
+    if (needsAppeal(r, !!lastPhoto) && navigator.onLine) {
+      const why = lastPhoto ? "Photo ruling - getting a second look from the cloud referee." : "Low confidence on the first call - escalating automatically.";
+      box.insertAdjacentHTML("beforeend", `<p class="muted">${why}</p>`);
       await runAppeal(r);
     }
   } catch (e) {

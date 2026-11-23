@@ -3,7 +3,7 @@ import type { Part } from "firebase/ai";
 import { refereeModel, cloudRefereeModel, appealsModel, variationsModel, plainCloudModel, settings, retrying } from "./firebase";
 import { retrieve, type Game, type Section, type HouseRule } from "./store";
 
-export type Verdict = "ALLOWED" | "NOT_ALLOWED" | "DEPENDS";
+export type Verdict = "YES" | "NO" | "DEPENDS";
 export interface Ruling {
   verdict: Verdict;
   ruling: string;
@@ -30,10 +30,11 @@ function refereePrompt(game: Game, sections: Section[], question: string, hasPho
   return `You are Game Ref, the impartial referee for the game "${game.name}".
 Decide the player's question using ONLY the RULES and ACTIVE HOUSE RULES below.
 House rules override the rulebook wherever they conflict.
+"verdict" is the direct answer to the question: YES (it is allowed / it is true) or NO (it is not allowed / it is not true).
 If the rules do not settle it, answer DEPENDS and say exactly what would decide it.
 "ruling" is one short sentence a player can read aloud. "explanation" is 1-3 sentences.
 List the bracketed rule ids you relied on in citedRuleIds (use "HOUSE" for a house rule).
-"confidence" is a number from 0 to 1.${hasPhoto ? "\nThe attached photo shows the current game state; use it." : ""}
+"confidence" is a number from 0 to 1.${hasPhoto ? "\nThe attached photo shows the current game state. FIRST fill \"observed\": list the pieces, cards or positions in the photo that matter for this question, and what each one attacks, blocks or affects. Then check EVERY condition of the relevant rule against what you observed before deciding." : "\nCheck every condition of the relevant rule before deciding."}
 
 RULES:
 ${sectionsBlock(sections)}
@@ -47,7 +48,8 @@ QUESTION: ${question}`;
 function parse(text: string): Omit<Ruling, "source" | "stage" | "ms" | "question" | "consulted" | "at"> {
   const raw = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "");
   const j = JSON.parse(raw);
-  const verdict: Verdict = ["ALLOWED", "NOT_ALLOWED", "DEPENDS"].includes(j.verdict) ? j.verdict : "DEPENDS";
+  const alias: Record<string, Verdict> = { ALLOWED: "YES", NOT_ALLOWED: "NO" };
+  const verdict: Verdict = ["YES", "NO", "DEPENDS"].includes(j.verdict) ? j.verdict : (alias[j.verdict] ?? "DEPENDS");
   let confidence = Number(j.confidence);
   if (!Number.isFinite(confidence)) confidence = 0.5;
   if (confidence > 1) confidence = confidence / 100;
@@ -65,6 +67,7 @@ function withPhoto(prompt: string, photo?: Part): string | (string | Part)[] {
 }
 
 const ON_DEVICE_TIMEOUT_MS = 30_000;
+let deviceBusy = false;
 
 /** First ruling. Runs on Gemini Nano when Chrome has it, otherwise in the cloud (SDK decides).
  *  If the on-device model stalls (cold start, busy GPU) and we're online, the cloud takes the call. */
@@ -72,7 +75,23 @@ export async function callIt(game: Game, question: string, photo?: Part, onSlow?
   const consulted = retrieve(game, question);
   const request = withPhoto(refereePrompt(game, consulted, question, !!photo), photo);
   const t0 = performance.now();
+  // If an earlier on-device call is still grinding, don't queue another one behind it.
+  if (deviceBusy && navigator.onLine) {
+    onSlow?.();
+    const res = await retrying(() => cloudRefereeModel().generateContent(request));
+    return {
+      ...parse(res.response.text()),
+      source: "in_cloud",
+      stage: "first",
+      ms: Math.round(performance.now() - t0),
+      question,
+      consulted,
+      at: Date.now(),
+    };
+  }
+  deviceBusy = true;
   const primary = refereeModel().generateContent(request);
+  primary.finally(() => (deviceBusy = false)).catch(() => {});
   let timer: ReturnType<typeof setTimeout> | undefined;
   const stalled = new Promise<"stalled">((resolve) => {
     timer = setTimeout(() => resolve("stalled"), ON_DEVICE_TIMEOUT_MS);
@@ -102,8 +121,9 @@ export async function callIt(game: Game, question: string, photo?: Part, onSlow?
 }
 
 /** Should the first ruling be sent up to the cloud appeals court automatically? */
-export function needsAppeal(r: Ruling): boolean {
-  return r.stage === "first" && (r.confidence < settings.escalate_below || r.citedRuleIds.length === 0);
+export function needsAppeal(r: Ruling, hadPhoto = false): boolean {
+  // Board-state questions are where small models slip, so photo rulings always get a second look.
+  return r.stage === "first" && (hadPhoto || r.confidence < settings.escalate_below || r.citedRuleIds.length === 0);
 }
 
 /** Appeal: cloud model reads the WHOLE rulebook and reviews the first ruling. */
@@ -117,7 +137,8 @@ A first ruling was made from a partial reading of the rules:
 verdict=${first.verdict}; ruling="${first.ruling}"; cited=${first.citedRuleIds.join(", ") || "none"}.
 You are the appeals referee. Review the complete rulebook, then uphold or overturn it.`;
   const t0 = performance.now();
-  const res = await retrying(() => appealsModel().generateContent(withPhoto(prompt, photo)));
+  const req = withPhoto(prompt, photo);
+  const res = await retrying(() => appealsModel().generateContent(req), 2).catch(() => retrying(() => appealsModel(true).generateContent(req)));
   const ms = Math.round(performance.now() - t0);
   const parsed = parse(res.response.text());
   const ids = new Set(parsed.citedRuleIds);

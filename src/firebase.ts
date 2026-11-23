@@ -40,7 +40,7 @@ if (env.VITE_RECAPTCHA_SITE_KEY) {
 // Remote Config: swap cloud models / tune escalation without shipping a new build.
 const DEFAULTS = {
   cloud_model: "gemini-3.5-flash-lite",
-  appeal_model: "gemini-3.5-flash-lite",
+  appeal_model: "gemini-3.5-flash",
   escalate_below: 0.55,
 };
 export const settings = { ...DEFAULTS };
@@ -64,12 +64,15 @@ export const ai = getAI(app, { backend: new GoogleAIBackend() });
 // The shape of every ruling, enforced on-device (responseConstraint) and in the cloud (responseSchema).
 export const rulingSchema = Schema.object({
   properties: {
-    verdict: Schema.enumString({ enum: ["ALLOWED", "NOT_ALLOWED", "DEPENDS"] }),
+    observed: Schema.string(),
+    verdict: Schema.enumString({ enum: ["YES", "NO", "DEPENDS"] }),
     ruling: Schema.string(),
     explanation: Schema.string(),
     citedRuleIds: Schema.array({ items: Schema.string() }),
     confidence: Schema.number(),
   },
+  optionalProperties: ["observed"],
+  propertyOrdering: ["observed", "verdict", "ruling", "explanation", "citedRuleIds", "confidence"],
 });
 
 export const sectionsSchema = Schema.object({
@@ -141,8 +144,19 @@ export function cloudRefereeModel(): GenerativeModel {
   }));
 }
 
-/** Appeals court: always cloud, reads the entire rulebook plus the first ruling. */
-export function appealsModel(): GenerativeModel {
+/** Appeals court: always cloud, reads the entire rulebook plus the first ruling.
+ *  Uses the stronger appeal_model; `fallback` uses cloud_model when that one is overloaded. */
+let _appealsFallback: GenerativeModel | null = null;
+export function appealsModel(fallback = false): GenerativeModel {
+  if (fallback) {
+    return (_appealsFallback ??= getGenerativeModel(ai, {
+      mode: InferenceMode.ONLY_IN_CLOUD,
+      inCloudParams: {
+        model: settings.cloud_model,
+        generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseSchema: rulingSchema },
+      },
+    }));
+  }
   return (_appeals ??= getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_IN_CLOUD,
     inCloudParams: {
@@ -161,7 +175,7 @@ export function ingestModel(): GenerativeModel {
   return (_ingest ??= getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_IN_CLOUD,
     inCloudParams: {
-      model: settings.appeal_model,
+      model: settings.cloud_model,
       generationConfig: {
         temperature: 0,
         maxOutputTokens: 32768,

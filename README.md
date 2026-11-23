@@ -26,7 +26,7 @@ Firebase AI Logic is imported and called at runtime in [`src/firebase.ts`](src/f
 
 - Built-in rulebooks for Chess, Checkers and Crazy Eights, so it works immediately
 - Add any game from a PDF or pasted text
-- Verdicts: ALLOWED / NOT ALLOWED / DEPENDS, with the cited rule text expandable under each call
+- Verdicts: YES / NO / IT DEPENDS, with the cited rule text expandable under each call
 - House rules table: toggle variants on and off; they override the rulebook
 - Works offline for on-device rulings and text rulebooks
 
