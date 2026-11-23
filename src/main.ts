@@ -5,7 +5,7 @@ import { listGames, saveGame, deleteGame, type Game, type HouseRule } from "./st
 import { SAMPLES } from "./samples";
 import { gameFromPdf, gameFromText } from "./ingest";
 import { callIt, appeal, needsAppeal, findVariations, type Ruling } from "./referee";
-import { zeb, line, whistle, type Mood } from "./mascot";
+import { zeb, line, whistle, preloadZeb, type Mood } from "./mascot";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) =>
@@ -407,7 +407,8 @@ function renderRulebook() {
 (async () => {
   $("brand-zeb").innerHTML = zeb("idle", { headOnly: true });
   const icon = document.querySelector<HTMLLinkElement>("link[rel=icon]");
-  if (icon) icon.href = "data:image/svg+xml," + encodeURIComponent(zeb("idle", { headOnly: true }));
+  if (icon) icon.href = "/zeb/favicon.png";
+  preloadZeb();
   renderMute();
   setZeb("idle");
   refreshStatus();

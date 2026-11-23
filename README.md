@@ -1,6 +1,6 @@
 # Game Ref 🦓
 
-**Meet Zeb the Ref**, a cartoon zebra referee who reacts to every call: a green card for YES, a red card and a whistle for NO, a shrug for IT DEPENDS, and a trip to the replay booth for appeals. Zeb is drawn in SVG in [`src/mascot.ts`](src/mascot.ts) and the whistle is synthesized with Web Audio (mute button in the header).
+**Meet Zeb the Ref**, a cartoon zebra referee who reacts to every call: a green card for YES, a red card and a whistle for NO, a shrug for IT DEPENDS, a rulebook while he thinks, and a replay tablet for appeals. Zeb's art was rendered locally with ComfyUI (Qwen-Image-Edit 2511, Apache-2.0) and his clips with Wan 2.2 (Apache-2.0); the poses live in [`public/zeb/`](public/zeb) and the logic in [`src/mascot.ts`](src/mascot.ts). The whistle is synthesized with Web Audio (mute button in the header).
 
 
 **An AI referee that knows every rule and every variation.** Ask "can I do this?" mid-game and get a verdict, the rule it comes from, and a one-line ruling you can read out loud. Most calls run **on your device with Gemini Nano** (instant, offline, free). Tough calls are appealed to **Gemini in the cloud**, which reads the whole rulebook.
