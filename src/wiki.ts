@@ -72,7 +72,7 @@ export async function gameFromWiki(title: string): Promise<Game> {
     const heading = m[2].trim();
     const body = part.slice(m[0].length).trim();
     const junk = DROP.test(heading) || NOISE.test(heading);
-    const keep = !junk && (KEEP.test(heading) || (m[1].length > 2 && parentKept));
+    const keep: boolean = !junk && (KEEP.test(heading) || (m[1].length > 2 && parentKept));
     if (m[1].length <= 2) parentKept = keep;
     if (keep && body) kept.push(`## ${heading}\n${body}`);
   }
