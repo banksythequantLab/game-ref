@@ -18,8 +18,10 @@ export interface Game {
   name: string;
   sections: Section[];
   houseRules: HouseRule[];
-  origin: "sample" | "pdf-cloud" | "pdf-local" | "text-local";
+  origin: "sample" | "pdf-cloud" | "pdf-local" | "text-local" | "wikipedia";
   addedAt: number;
+  /** Where the rules text came from, when it needs attribution (Wikipedia: CC BY-SA 4.0). */
+  source?: { title: string; url: string; license: string; licenseUrl: string };
 }
 
 const PREFIX = "game:";

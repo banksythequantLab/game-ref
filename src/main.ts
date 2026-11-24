@@ -6,6 +6,11 @@ import { SAMPLES } from "./samples";
 import { gameFromPdf, gameFromText } from "./ingest";
 import { callIt, appeal, needsAppeal, findVariations, type Ruling } from "./referee";
 import { zeb, line, whistle, preloadZeb, type Mood } from "./mascot";
+import { searchWiki, gameFromWiki } from "./wiki";
+import {
+  playClip, stopClip, clipsOn, speak, loadNight, saveNight, leader, isRedCarded,
+  canListen, listenOnce, startWakeWord, stopWakeWord, usingLocalSpeech, type Clip,
+} from "./fun";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) =>
@@ -26,24 +31,40 @@ function setZeb(mood: Mood, text = line(mood)) {
   b.classList.add("pop");
 }
 const verdictMood = (r: Ruling): Mood => (r.verdict === "YES" ? "yes" : r.verdict === "NO" ? "no" : "depends");
+const isCardGame = () => /\b(eights?|uno|cards?|poker|rummy|hearts|spades|gin|bridge|euchre|cribbage|solitaire|blackjack|war|go fish|canasta|pinochle|skat|whist)\b/i.test(game.name);
+
 function react(r: Ruling, first?: Ruling) {
   if (first) {
     const reversed = first.verdict !== r.verdict;
-    setZeb(reversed ? "overturned" : "upheld");
+    const mood: Mood = reversed ? "overturned" : "upheld";
+    const said = line(mood);
+    setZeb(mood, said);
     whistle(reversed ? 2 : 1);
+    stopClip(400);
+    setTimeout(() => speak(`${said} ${r.ruling}`), reversed ? 700 : 400);
     return;
   }
   const mood = verdictMood(r);
-  setZeb(mood);
+  const said = line(mood);
+  setZeb(mood, said);
+  const clip: Clip | null = mood === "no" ? "whistle" : mood === "yes" ? (isCardGame() ? "cards" : "cheer") : null;
+  if (clip) playClip(clip, mood === "no" ? "Foul!" : "Play on!");
   if (mood === "no") whistle(2);
   else if (mood === "yes") whistle(1);
+  setTimeout(() => speak(`${said} ${r.ruling}`), mood === "no" ? 750 : 350);
 }
 
 function renderMute() {
   let muted = false;
   try { muted = localStorage.getItem("gameref:muted") === "1"; } catch { /* ignore */ }
-  $("btn-mute").textContent = muted ? "🔇 Whistle off" : "🔊 Whistle on";
+  $("btn-mute").textContent = muted ? "🔇 Sound off" : "🔊 Sound on";
+  $("btn-clips").textContent = clipsOn() ? "🎬 Clips on" : "🎬 Clips off";
 }
+$("btn-clips").onclick = () => {
+  try { localStorage.setItem("gameref:clips", clipsOn() ? "0" : "1"); } catch { /* ignore */ }
+  if (!clipsOn()) stopClip();
+  renderMute();
+};
 $("btn-mute").onclick = () => {
   try {
     const muted = localStorage.getItem("gameref:muted") === "1";
@@ -110,8 +131,9 @@ function selectGame(id: string) {
     "pdf-cloud": "PDF read by the cloud",
     "pdf-local": "PDF read on this device",
     "text-local": "text indexed on this device",
+    wikipedia: "from Wikipedia",
   };
-  $("game-meta").textContent = `${game.sections.length} rule sections · ${originLabel[game.origin]}`;
+  $("game-meta").innerHTML = `${game.sections.length} rule sections · ${esc(originLabel[game.origin])}${creditHtml()}`;
   $("btn-delete").classList.toggle("hidden", game.origin === "sample");
   $("ruling").innerHTML = "";
   $("variations-out").innerHTML = "";
@@ -127,8 +149,64 @@ $("btn-delete").onclick = async () => {
   await loadLibrary();
 };
 
+/** CC BY-SA credit for Wikipedia-sourced rules (shown under the game and on every ruling). */
+function creditHtml(): string {
+  const s = game?.source;
+  if (!s) return "";
+  return ` <span class="credit">· Rules text: <a href="${esc(s.url)}" target="_blank" rel="noopener">"${esc(s.title)}" on Wikipedia</a>, <a href="${esc(s.licenseUrl)}" target="_blank" rel="noopener">${esc(s.license)}</a> (excerpted)</span>`;
+}
+
+// ---------------- any game from Wikipedia ----------------
+async function runWikiSearch() {
+  const q = $<HTMLInputElement>("wiki-q").value.trim();
+  const out = $("wiki-results");
+  if (!q) return $("wiki-q").focus();
+  if (!navigator.onLine) return (out.innerHTML = `<p class="muted">Finding new games needs the internet. Games you've already added work offline.</p>`);
+  out.innerHTML = `<div class="thinking">Looking up "${esc(q)}" on Wikipedia</div>`;
+  try {
+    const hits = await searchWiki(q);
+    out.innerHTML = hits.length
+      ? hits
+          .map(
+            (h, i) => `<div class="wiki-hit"><div><b>${esc(h.title)}</b><span class="muted">${esc(h.snippet)}</span></div>
+            <button class="ghost small" data-w="${i}">+ Add</button></div>`
+          )
+          .join("")
+      : `<p class="muted">Nothing found. Try the game's full name.</p>`;
+    out.querySelectorAll<HTMLButtonElement>("button[data-w]").forEach((b) => {
+      b.onclick = async () => {
+        const hit = hits[Number(b.dataset.w)];
+        b.disabled = true;
+        b.textContent = "Reading...";
+        try {
+          const g = await gameFromWiki(hit.title);
+          await saveGame(g);
+          out.innerHTML = `<p class="muted">Added ${esc(g.name)}: ${g.sections.length} rule sections, now stored on this device.</p>`;
+          $("add-panel").classList.add("hidden");
+          await loadLibrary(g.id);
+          setZeb("yes", `Got the ${g.name} rules from Wikipedia. Ask away!`);
+          speak(`Got the ${g.name} rules. Ask away!`);
+        } catch (e) {
+          b.disabled = false;
+          b.textContent = "+ Add";
+          out.insertAdjacentHTML("afterbegin", `<p class="error">${esc((e as Error).message)}</p>`);
+        }
+      };
+    });
+  } catch (e) {
+    out.innerHTML = `<p class="error">Couldn't reach Wikipedia: ${esc((e as Error).message)}</p>`;
+  }
+}
+$("btn-wiki").onclick = runWikiSearch;
+$<HTMLInputElement>("wiki-q").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") runWikiSearch();
+});
+
 // ---------------- add rulebook ----------------
-$("btn-add").onclick = () => $("add-panel").classList.toggle("hidden");
+$("btn-add").onclick = () => {
+  $("add-panel").classList.toggle("hidden");
+  if (!$("add-panel").classList.contains("hidden")) $("wiki-q").focus();
+};
 $("btn-add-cancel").onclick = () => $("add-panel").classList.add("hidden");
 $("btn-add-go").onclick = async () => {
   const name = $<HTMLInputElement>("add-name").value.trim();
@@ -222,29 +300,169 @@ function rulingHtml(r: Ruling, first?: Ruling): string {
     .join("");
   const overturned = first && first.verdict !== r.verdict ? `<p class="muted">Appeal overturned the first call (${esc(first.verdict.replace("_", " "))}).</p>` : first ? `<p class="muted">Appeal upheld the first call.</p>` : "";
   const canAppeal = r.stage === "first" && navigator.onLine;
+  const night = loadNight();
+  const picker =
+    night.players.length && !first
+      ? `<div class="picker" id="won-picker"><span class="muted">Who won this call?</span>${night.players
+          .map((p) => `<button class="chip-btn" data-won="${esc(p)}">${esc(p)}</button>`)
+          .join("")}<button class="chip-btn" data-won="">Nobody</button></div>`
+      : "";
   return `<div class="ruling ${r.verdict}">
     <div class="verdict">${label}</div>
     <p class="said">${esc(r.ruling)}</p>
     <p class="muted">${esc(r.explanation)}</p>
     ${overturned}
-    <div class="meta">${sourceBadge(r)}${canAppeal ? `<button class="ghost small" id="btn-appeal">⚖️ Appeal to the cloud</button>` : ""}</div>
+    <div class="meta">${sourceBadge(r)}${canAppeal ? `<button class="flag" id="btn-appeal">🚩 Throw the challenge flag</button>` : ""}</div>
+    <div id="flag-picker"></div>
+    ${picker}
     <div class="cites">${cites}</div>
+    ${game.source ? `<p class="credit">${creditHtml().replace(/^ ?<span class="credit">· /, "").replace(/<\/span>$/, "")}</p>` : ""}
   </div>`;
+}
+
+// ---------------- Rules Lawyer of the Night ----------------
+function renderNight() {
+  const n = loadNight();
+  const lead = leader(n);
+  const rows = [...n.players].sort((a, b) => (n.wins[b] ?? 0) - (n.wins[a] ?? 0));
+  $("night-board").innerHTML = rows.length
+    ? rows
+        .map((p) => {
+          const y = n.yellows[p] ?? 0;
+          const cards = isRedCarded(n, p) ? `<span class="rcard" title="Red card"></span>` : "<span class=\"ycard\" title=\"Yellow card\"></span>".repeat(y);
+          return `<li class="${p === lead ? "lead" : ""}"><span class="crown">${p === lead ? "👑" : "🎲"}</span><span class="pname">${esc(p)}</span>
+            <span class="cards">${cards}</span><span class="pts">${n.wins[p] ?? 0} won</span>
+            <button class="ghost small" data-rm="${esc(p)}" aria-label="Remove ${esc(p)}">✕</button></li>`;
+        })
+        .join("")
+    : `<li class="muted">No players yet.</li>`;
+  $("night-sub").textContent = lead
+    ? `${lead} is tonight's Rules Lawyer with ${n.wins[lead]} ${n.wins[lead] === 1 ? "win" : "wins"}. ${n.calls} calls made.`
+    : "Add the players. Zeb keeps score of who wins each argument, and hands out yellow cards for bad challenges.";
+  $("night-board").querySelectorAll<HTMLButtonElement>("button[data-rm]").forEach((b) => {
+    b.onclick = () => {
+      const m = loadNight();
+      m.players = m.players.filter((x) => x !== b.dataset.rm);
+      saveNight(m);
+      renderNight();
+    };
+  });
+}
+$("btn-night-add").onclick = () => {
+  const inp = $<HTMLInputElement>("night-name");
+  const name = inp.value.trim().slice(0, 24);
+  if (!name) return inp.focus();
+  const n = loadNight();
+  if (!n.players.some((p) => p.toLowerCase() === name.toLowerCase())) n.players.push(name);
+  saveNight(n);
+  inp.value = "";
+  renderNight();
+};
+$<HTMLInputElement>("night-name").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("btn-night-add").click();
+});
+$("btn-night-reset").onclick = () => {
+  const n = loadNight();
+  saveNight({ players: n.players, wins: {}, yellows: {}, calls: 0, started: Date.now() });
+  renderNight();
+  setZeb("idle", "New game night! Scores are back to zero.");
+};
+
+function award(player: string, why: string) {
+  const n = loadNight();
+  const before = leader(n);
+  n.wins[player] = (n.wins[player] ?? 0) + 1;
+  saveNight(n);
+  renderNight();
+  const after = leader(n);
+  const msg = after === player && before !== player ? `Point to ${player} — and a new Rules Lawyer of the Night!` : `Point to ${player}${why}.`;
+  setZeb("upheld", msg);
+  speak(msg);
+}
+
+function wireWinPicker() {
+  document.querySelectorAll<HTMLButtonElement>("#won-picker button[data-won]").forEach((b) => {
+    b.onclick = () => {
+      document.querySelectorAll<HTMLButtonElement>("#won-picker button").forEach((x) => (x.disabled = true));
+      b.classList.add("won");
+      const n = loadNight();
+      n.calls++;
+      saveNight(n);
+      if (b.dataset.won) award(b.dataset.won, "");
+      else renderNight();
+    };
+  });
+}
+
+/** Challenge flag: pick who's throwing it (if players are set up), then go to the replay booth. */
+function wireFlag(first: Ruling) {
+  const btn = $<HTMLButtonElement>("btn-appeal");
+  if (!btn) return;
+  btn.onclick = () => {
+    const n = loadNight();
+    const eligible = n.players.filter((p) => !isRedCarded(n, p));
+    if (!n.players.length) return throwFlag(first, null);
+    $("flag-picker").innerHTML = `<div class="picker"><span class="muted">Who's throwing the flag?</span>${n.players
+      .map((p) => `<button class="chip-btn" data-ch="${esc(p)}" ${eligible.includes(p) ? "" : "disabled title=\"Red-carded: out of challenges tonight\""}>${esc(p)}${eligible.includes(p) ? "" : " 🟥"}</button>`)
+      .join("")}</div>`;
+    $("flag-picker").querySelectorAll<HTMLButtonElement>("button[data-ch]").forEach((b) => {
+      b.onclick = () => throwFlag(first, b.dataset.ch!);
+    });
+  };
+}
+
+function throwFlag(first: Ruling, challenger: string | null) {
+  const btn = $<HTMLButtonElement>("btn-appeal");
+  const r = btn?.getBoundingClientRect();
+  const f = document.createElement("div");
+  f.className = "flag-throw";
+  f.textContent = "🚩";
+  f.style.left = `${(r?.left ?? innerWidth / 2) + (r?.width ?? 0) / 2 - 32}px`;
+  f.style.top = `${(r?.top ?? innerHeight / 2) - 20}px`;
+  document.body.appendChild(f);
+  setTimeout(() => f.remove(), 1000);
+  whistle(1);
+  btn?.remove();
+  $("flag-picker").innerHTML = "";
+  speak(challenger ? `${challenger} has thrown the challenge flag! Going to the replay booth.` : "Challenge flag! Going to the replay booth.");
+  runAppeal(first, challenger);
 }
 
 let lastFirst: Ruling | undefined;
 let lastPhoto: Part | undefined;
 
-async function runAppeal(first: Ruling) {
+async function runAppeal(first: Ruling, challenger: string | null = null) {
   const box = $("ruling");
   box.insertAdjacentHTML("beforeend", `<div class="thinking" id="appeal-thinking">Sending it up to the cloud appeals referee (full rulebook)</div>`);
   setZeb("appeal");
+  playClip("replay", "Under review", true);
   try {
     const r = await appeal(game, first, lastPhoto);
     box.innerHTML = rulingHtml(r, first);
     pushHistory(r);
     react(r, first);
+    if (challenger) {
+      const reversed = first.verdict !== r.verdict;
+      const n = loadNight();
+      if (reversed) {
+        setTimeout(() => award(challenger, " for a winning challenge"), 3500);
+      } else {
+        n.yellows[challenger] = (n.yellows[challenger] ?? 0) + 1;
+        saveNight(n);
+        renderNight();
+        const red = isRedCarded(n, challenger);
+        const msg = red
+          ? `That's a second yellow for ${challenger}. Red card! No more challenges for ${challenger} tonight.`
+          : `The call stands. Yellow card for ${challenger}!`;
+        setTimeout(() => {
+          setZeb("no", msg);
+          whistle(red ? 3 : 1);
+          speak(msg);
+        }, 3500);
+      }
+    }
   } catch (e) {
+    stopClip();
     $("appeal-thinking")?.remove();
     setZeb("depends", "The replay booth is down. The first call stands for now.");
     box.insertAdjacentHTML("beforeend", `<p class="error">Appeal failed: ${esc((e as Error).message)}</p>`);
@@ -259,6 +477,8 @@ $("btn-call").onclick = async () => {
   btn.disabled = true;
   box.innerHTML = `<div class="thinking">The ref is checking ${game.sections.length} rules</div>`;
   setZeb("thinking");
+  stopClip();
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
   try {
     lastPhoto = photo;
     const r = await callIt(game, q, photo, () => {
@@ -269,8 +489,10 @@ $("btn-call").onclick = async () => {
     box.innerHTML = rulingHtml(r);
     pushHistory(r);
     react(r);
-    $("btn-appeal")?.addEventListener("click", () => runAppeal(r));
+    wireFlag(r);
+    wireWinPicker();
     if (needsAppeal(r, !!lastPhoto) && navigator.onLine) {
+      $("btn-appeal")?.remove();
       const why = lastPhoto ? "Photo ruling - getting a second look from the cloud referee." : "Low confidence on the first call - escalating automatically.";
       box.insertAdjacentHTML("beforeend", `<p class="muted">${why}</p>`);
       await runAppeal(r);
@@ -312,7 +534,15 @@ function renderHistory() {
     : `<li class="muted">No calls yet for this game.</li>`;
   $("history")
     .querySelectorAll<HTMLLIElement>("li[data-i]")
-    .forEach((li) => (li.onclick = () => ($("ruling").innerHTML = rulingHtml(items[Number(li.dataset.i)].r))));
+    .forEach(
+      (li) =>
+        (li.onclick = () => {
+          const r = items[Number(li.dataset.i)].r;
+          $("ruling").innerHTML = rulingHtml(r);
+          if (r.stage === "first") wireFlag(r);
+          wireWinPicker();
+        })
+    );
 }
 
 // ---------------- house rules & variations ----------------
@@ -403,6 +633,52 @@ function renderRulebook() {
     .join("");
 }
 
+// ---------------- ask out loud / "Hey Zeb" ----------------
+function askAloud(q: string) {
+  $<HTMLTextAreaElement>("question").value = q;
+  $("btn-call").click();
+}
+$("btn-mic").onclick = async () => {
+  if (!canListen()) return setZeb("depends", "This browser can't listen. Type your question instead.");
+  const b = $<HTMLButtonElement>("btn-mic");
+  b.classList.add("listening");
+  b.textContent = "🎤 Listening...";
+  setZeb("thinking", "I'm listening. Ask your question.");
+  try {
+    const q = await listenOnce();
+    if (q) askAloud(q);
+    else setZeb("depends", "I didn't hear a question. Try again?");
+  } catch (e) {
+    setZeb("depends", (e as Error).message);
+  }
+  b.classList.remove("listening");
+  b.textContent = "🎤 Ask out loud";
+};
+let wakeOn = false;
+$("btn-wake").onclick = async () => {
+  const b = $<HTMLButtonElement>("btn-wake");
+  if (!canListen()) return setZeb("depends", "This browser can't listen. Type your question instead.");
+  if (wakeOn) {
+    wakeOn = false;
+    stopWakeWord();
+    b.classList.remove("listening");
+    b.textContent = "👂 Hey Zeb: off";
+    return;
+  }
+  wakeOn = await startWakeWord(
+    (q) => askAloud(q),
+    () => {
+      setZeb("thinking", "Yes? What's the question?");
+      speak("Yes?");
+    }
+  );
+  if (wakeOn) {
+    b.classList.add("listening");
+    b.textContent = "👂 Hey Zeb: on";
+    setZeb("idle", `Say "Hey Zeb" and then your question.${usingLocalSpeech() ? " Listening on this device." : ""}`);
+  }
+};
+
 // ---------------- boot ----------------
 (async () => {
   $("brand-zeb").innerHTML = zeb("idle", { headOnly: true });
@@ -410,7 +686,15 @@ function renderRulebook() {
   if (icon) icon.href = "/zeb/favicon.png";
   preloadZeb();
   renderMute();
+  renderNight();
   setZeb("idle");
+  // First visit this session: Zeb waves hello on the jumbotron.
+  try {
+    if (!sessionStorage.getItem("gameref:waved")) {
+      sessionStorage.setItem("gameref:waved", "1");
+      playClip("wave", "Meet Zeb the Ref");
+    }
+  } catch { /* ignore */ }
   refreshStatus();
   await loadSettings();
   await loadLibrary();

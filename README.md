@@ -27,6 +27,12 @@ Firebase AI Logic is imported and called at runtime in [`src/firebase.ts`](src/f
 
 ## Features
 
+- **Any game from Wikipedia**: search a game, Game Ref pulls the article's rules sections (CC BY-SA 4.0), stores them on the device and credits the article on every ruling
+- **Zeb's jumbotron**: 5-second clips of Zeb play on each call (whistle on NO, cheer on YES, replay booth during appeals); 🎬 toggle in the header
+- **Zeb talks**: rulings are read aloud with the browser's built-in speech (works offline); 🔊 toggle covers voice and whistle
+- **Challenge flag**: throw the 🚩 to send a call to the cloud replay booth; a failed challenge earns a yellow card, two yellows = red card (no more challenges tonight)
+- **Rules Lawyer of the Night**: add the players, tap who won each call, and Zeb crowns the leader
+- **Ask out loud / "Hey Zeb"**: Web Speech recognition, on-device when Chrome has the language pack
 - Built-in rulebooks for Chess, Checkers and Crazy Eights, so it works immediately
 - Add any game from a PDF or pasted text
 - Verdicts: YES / NO / IT DEPENDS, with the cited rule text expandable under each call

@@ -18,7 +18,8 @@
         <span id="chip-device" class="chip">On-device: checking...</span>
         <span id="chip-net" class="chip">...</span>
         <button id="btn-download" class="small hidden">Download on-device model</button>
-        <button id="btn-mute" class="small ghost" aria-label="Toggle whistle sound">🔊 Whistle on</button>
+        <button id="btn-mute" class="small ghost" aria-label="Toggle sound">🔊 Sound on</button>
+        <button id="btn-clips" class="small ghost" aria-label="Toggle video clips">🎬 Clips on</button>
       </div>
     </header>
 
@@ -26,13 +27,19 @@
       <section class="card game-bar">
         <label for="game-select">Game</label>
         <select id="game-select"></select>
-        <button id="btn-add" class="ghost">+ Add rulebook</button>
+        <button id="btn-add" class="ghost">+ Add a game</button>
         <button id="btn-delete" class="ghost danger hidden">Remove</button>
         <span id="game-meta" class="muted"></span>
       </section>
 
       <section class="card add-panel hidden" id="add-panel">
-        <h2>Add a rulebook</h2>
+        <h2>Add a game</h2>
+        <div class="row">
+          <input id="wiki-q" class="grow" placeholder="Any game: Uno, Mahjong, Pickleball, Spades..." />
+          <button id="btn-wiki">Find rules on Wikipedia</button>
+        </div>
+        <div id="wiki-results" class="wiki-results"></div>
+        <p class="muted" style="margin-top:14px">Or use your own rulebook:</p>
         <input id="add-name" placeholder="Game name (e.g. Catan, Uno, Pickleball)" />
         <div class="row">
           <label class="file">PDF rulebook<input id="add-pdf" type="file" accept="application/pdf" /></label>
@@ -48,6 +55,7 @@
 
       <section class="card ask">
         <div class="stage"><div id="zeb-stage" class="zeb-stage"></div><div id="zeb-bubble" class="bubble" aria-live="polite"></div></div>
+        <div id="jumbotron" class="jumbotron hidden"><video playsinline muted preload="auto"></video><div class="jt-label"></div></div>
         <h2>Ask Zeb</h2>
         <textarea id="question" rows="3" placeholder="e.g. My pawn just reached the last rank - can I take a second queen?"></textarea>
         <div class="row">
@@ -55,9 +63,24 @@
           <img id="photo-preview" class="hidden" alt="Attached game photo" />
           <button id="photo-clear" class="ghost small hidden">Remove photo</button>
           <span class="spacer"></span>
+          <button id="btn-mic" class="ghost" title="Ask out loud">🎤 Ask out loud</button>
+          <button id="btn-wake" class="ghost" title="Hands-free: say Hey Zeb, then your question">👂 Hey Zeb: off</button>
           <button id="btn-call" class="primary">🟨 Call it</button>
         </div>
         <div id="ruling"></div>
+      </section>
+
+      <section class="card night">
+        <div class="row between">
+          <h2>🏆 Rules Lawyer of the Night</h2>
+          <button id="btn-night-reset" class="ghost small">New game night</button>
+        </div>
+        <p class="muted" id="night-sub">Add the players. Zeb keeps score of who wins each argument, and hands out yellow cards for bad challenges.</p>
+        <ul id="night-board" class="board"></ul>
+        <div class="row">
+          <input id="night-name" placeholder="Player name" />
+          <button id="btn-night-add" class="ghost">Add player</button>
+        </div>
       </section>
 
       <section class="card">
