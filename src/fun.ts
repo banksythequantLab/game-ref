@@ -70,7 +70,14 @@ if ("speechSynthesis" in window) {
 
 /** Zeb reads a line out loud. New lines interrupt old ones. */
 export function speak(text: string): void {
-  if (!soundOn() || !("speechSynthesis" in window) || !text) return;
+  if (!soundOn() || !text) return;
+  // Android app: the WebView has no speechSynthesis, so Zeb uses Android's TextToSpeech.
+  const nativeTts = (window as unknown as { ZebNative?: { speak(t: string): void } }).ZebNative;
+  if (nativeTts) {
+    nativeTts.speak(text.replace(/[*_#]/g, ""));
+    return;
+  }
+  if (!("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text.replace(/[*_#]/g, ""));
   if (zebVoice) u.voice = zebVoice;
@@ -132,7 +139,8 @@ type RecCtor = (new () => Rec) & {
 const Ctor = ((window as unknown as { SpeechRecognition?: RecCtor }).SpeechRecognition ??
   (window as unknown as { webkitSpeechRecognition?: RecCtor }).webkitSpeechRecognition) as RecCtor | undefined;
 
-export const canListen = () => !!Ctor;
+// Android WebView exposes the constructor but has no recognition service behind it.
+export const canListen = () => !!Ctor && !("ZebNative" in window);
 let local: boolean | null = null;
 
 /** Try to use on-device speech recognition; returns true when audio never leaves the device. */

@@ -24,13 +24,69 @@ export const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 
+// ---------------------------------------------------------------------------------------------
+// Android app: the page runs in a WebView and window.ZebNative is the Firebase AI Logic Android
+// SDK (hybrid inference: Gemini Nano through AICore on the phone, cloud Gemini as fallback).
+// The model factories below hand back thin shims that forward to it.
+type NativeBridge = {
+  generate(id: string, spec: string): void;
+  status(id: string): void;
+  download(id: string): void;
+  speak(text: string): void;
+  stopSpeaking(): void;
+};
+type NativeOut = { text?: string; source?: string; error?: string };
+export const native: NativeBridge | undefined = (globalThis as unknown as { ZebNative?: NativeBridge }).ZebNative;
+export const isNativeApp = !!native;
+const pending = new Map<string, { ok: (o: NativeOut) => void; fail: (e: Error) => void; progress?: (p: number) => void }>();
+(globalThis as unknown as { __zebNative: object }).__zebNative = {
+  done(id: string, out: NativeOut) {
+    const p = pending.get(id);
+    if (!p) return;
+    pending.delete(id);
+    if (out.error) p.fail(new Error(out.error));
+    else p.ok(out);
+  },
+  progress(id: string, pct: number) {
+    pending.get(id)?.progress?.(pct);
+  },
+};
+let nativeSeq = 0;
+function callNative(fn: "generate" | "status" | "download", arg?: object, progress?: (p: number) => void): Promise<NativeOut> {
+  const id = `z${++nativeSeq}`;
+  return new Promise((ok, fail) => {
+    pending.set(id, { ok, fail, progress });
+    if (fn === "generate") native!.generate(id, JSON.stringify(arg));
+    else native![fn](id);
+  });
+}
+type NativePart = { text: string } | { mime: string; data: string };
+function toNativeParts(req: unknown): NativePart[] {
+  const items = Array.isArray(req) ? req : [req];
+  return items.map((p) => {
+    if (typeof p === "string") return { text: p };
+    const inline = (p as { inlineData?: { mimeType: string; data: string } }).inlineData;
+    if (inline) return { mime: inline.mimeType, data: inline.data };
+    return { text: String((p as { text?: string }).text ?? "") };
+  });
+}
+function nativeModel(kind: string, model: () => string, temperature?: number): GenerativeModel {
+  return {
+    async generateContent(req: unknown) {
+      const out = await callNative("generate", { kind, model: model(), temperature, parts: toNativeParts(req) });
+      return { response: { text: () => out.text ?? "", inferenceSource: out.source } };
+    },
+  } as unknown as GenerativeModel;
+}
+
 // App Check is required by Firebase AI Logic. Debug mode prints a token for localhost testing.
-if (env.VITE_APPCHECK_DEBUG === "true") {
+// (In the Android app, App Check runs natively in the Firebase Android SDK instead.)
+if (env.VITE_APPCHECK_DEBUG === "true" && !isNativeApp) {
   // A pre-registered token from .env (gitignored), or `true` to have the SDK print a new one.
   (self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN: string | boolean }).FIREBASE_APPCHECK_DEBUG_TOKEN =
     env.VITE_APPCHECK_DEBUG_TOKEN || true;
 }
-if (env.VITE_RECAPTCHA_SITE_KEY) {
+if (env.VITE_RECAPTCHA_SITE_KEY && !isNativeApp) {
   initializeAppCheck(app, {
     provider: new ReCaptchaEnterpriseProvider(env.VITE_RECAPTCHA_SITE_KEY),
     isTokenAutoRefreshEnabled: true,
@@ -98,6 +154,7 @@ let _variations: GenerativeModel | null = null;
 
 /** The everyday referee: Gemini Nano in Chrome when available, cloud fallback otherwise. */
 export function refereeModel(): GenerativeModel {
+  if (native) return (_referee ??= nativeModel("referee", () => settings.cloud_model, 0.2));
   return (_referee ??= getGenerativeModel(ai, {
     mode: InferenceMode.PREFER_ON_DEVICE,
     onDeviceParams: {
@@ -121,8 +178,7 @@ export async function retrying<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
     try {
       return await fn();
     } catch (e) {
-      const msg = String((e as Error)?.message ?? e);
-      if (i >= tries - 1 || !/\[(429|500|503) ?\]|high demand|overloaded|unavailable/i.test(msg)) throw e;
+      if (i >= tries - 1 || !isBusyError(e)) throw e;
       await new Promise((r) => setTimeout(r, 1500 * 2 ** i));
     }
   }
@@ -130,7 +186,9 @@ export async function retrying<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
 
 /** True for temporary capacity errors worth retrying or switching models on. */
 export function isBusyError(e: unknown): boolean {
-  return /\[(429|500|503) ?\]|high demand|overloaded|unavailable/i.test(String((e as Error)?.message ?? e));
+  return /\[(429|500|503) ?\]|high demand|overloaded|unavailable|ServerException|QuotaExceeded|BUSY/i.test(
+    String((e as Error)?.message ?? e),
+  );
 }
 
 const _cloudReferees = new Map<string, GenerativeModel>();
@@ -138,7 +196,7 @@ const _cloudReferees = new Map<string, GenerativeModel>();
  *  Pass a model name to use a backup model when the default one is overloaded. */
 export function cloudRefereeModel(model: string = settings.cloud_model): GenerativeModel {
   if (_cloudReferees.has(model)) return _cloudReferees.get(model)!;
-  const m = getGenerativeModel(ai, {
+  const m = native ? nativeModel("ruling", () => model, 0.2) : getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_IN_CLOUD,
     inCloudParams: {
       model,
@@ -157,6 +215,7 @@ export function cloudRefereeModel(model: string = settings.cloud_model): Generat
  *  Uses the stronger appeal_model; `fallback` uses cloud_model when that one is overloaded. */
 let _appealsFallback: GenerativeModel | null = null;
 export function appealsModel(fallback = false): GenerativeModel {
+  if (native) return nativeModel("ruling", () => (fallback ? settings.cloud_model : settings.appeal_model), 0.1);
   if (fallback) {
     return (_appealsFallback ??= getGenerativeModel(ai, {
       mode: InferenceMode.ONLY_IN_CLOUD,
@@ -181,6 +240,7 @@ export function appealsModel(fallback = false): GenerativeModel {
 
 /** Cloud rulebook reader: turns a rulebook PDF into numbered rule sections. */
 export function ingestModel(): GenerativeModel {
+  if (native) return nativeModel("ingest", () => settings.cloud_model);
   return (_ingest ??= getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_IN_CLOUD,
     inCloudParams: {
@@ -197,6 +257,7 @@ export function ingestModel(): GenerativeModel {
 
 /** Variations scout: cloud + Grounding with Google Search for official variants, FAQs and house rules. */
 export function variationsModel(): GenerativeModel {
+  if (native) return nativeModel("search", () => settings.cloud_model);
   return (_variations ??= getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_IN_CLOUD,
     inCloudParams: { model: settings.cloud_model, tools: [{ googleSearch: {} }] },
@@ -206,6 +267,7 @@ export function variationsModel(): GenerativeModel {
 let _plain: GenerativeModel | null = null;
 /** Plain cloud text model (no tools) - fallback when search grounding has no quota. */
 export function plainCloudModel(): GenerativeModel {
+  if (native) return nativeModel("plain", () => settings.cloud_model);
   return (_plain ??= getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_IN_CLOUD,
     inCloudParams: { model: settings.cloud_model },
@@ -222,6 +284,7 @@ function promptApi(): LM | null {
 }
 
 export async function onDeviceStatus(): Promise<string> {
+  if (native) return (await callNative("status")).text ?? "unavailable";
   const lm = promptApi();
   if (!lm) return "unsupported";
   try {
@@ -232,6 +295,10 @@ export async function onDeviceStatus(): Promise<string> {
 }
 
 export async function downloadOnDeviceModel(onProgress: (pct: number) => void): Promise<void> {
+  if (native) {
+    await callNative("download", undefined, onProgress);
+    return;
+  }
   const lm = promptApi();
   if (!lm) throw new Error("This browser has no on-device Prompt API");
   const session = await lm.create({

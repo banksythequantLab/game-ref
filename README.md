@@ -70,3 +70,25 @@ src/main.ts       UI
 ## License
 
 Apache 2.0. Built-in rule summaries are original text describing public-domain games.
+
+## Android app (true on-device on phones)
+
+Chrome on Android doesn't expose Gemini Nano to web pages, so phones get the same app as a small native shell in `android/`:
+
+- The web app is bundled into the APK and loads offline from `assets/web/`.
+- Every model call goes through `window.ZebNative` to the **Firebase AI Logic Android SDK** (`firebase-ai` + `firebase-ai-ondevice`).
+  - First rulings use `InferenceMode.PREFER_ON_DEVICE`: Gemini Nano through AICore on supported phones, cloud Gemini otherwise.
+  - Appeals, PDF reading and variations are cloud only, as on the web.
+- Rulings use `generateObject()` with a KSP `@Generable` schema (`Ruling.kt`), so the on-device and cloud models return the same JSON.
+- App Check runs natively.
+- Zeb talks through Android TextToSpeech.
+
+Build:
+
+```
+npm run build
+Copy-Item dist android\app\src\main\assets\web -Recurse -Force
+cd android; .\gradlew.bat :app:assembleDebug
+```
+
+Needs `android/app/google-services.json` (from `firebase apps:sdkconfig ANDROID <appId>`) and, for App Check on a debug build, `android/secrets.properties` with `appcheck.debug.secret=<registered debug token>`. Both files are gitignored.

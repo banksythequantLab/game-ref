@@ -112,6 +112,16 @@
     </main>
 
     <footer class="muted">Built with Firebase AI Logic hybrid inference · Gemini Nano on-device, Gemini in the cloud</footer>
-    <script type="module" src="/src/main.ts"></script>
+    <script>
+  // Older Android WebViews have no global Iterator; a bundled polyfill expects one to exist.
+  if (typeof Iterator === "undefined") {
+    globalThis.Iterator = function Iterator() {};
+    Iterator.prototype = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
+  }
+  if (typeof structuredClone === "undefined") {
+    globalThis.structuredClone = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
+  }
+</script>
+<script type="module" src="/src/main.ts"></script>
   </body>
 </html>

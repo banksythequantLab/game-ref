@@ -1,6 +1,6 @@
 import "./style.css";
 import type { Part } from "firebase/ai";
-import { loadSettings, onDeviceStatus, downloadOnDeviceModel } from "./firebase";
+import { loadSettings, onDeviceStatus, downloadOnDeviceModel, isNativeApp, isBusyError } from "./firebase";
 import { listGames, saveGame, deleteGame, type Game, type HouseRule } from "./store";
 import { SAMPLES } from "./samples";
 import { gameFromPdf, gameFromText } from "./ingest";
@@ -83,7 +83,7 @@ async function refreshStatus() {
     available: ["ok", "On-device: Gemini Nano ready"],
     downloadable: ["warn", "On-device: model not downloaded"],
     downloading: ["warn", "On-device: downloading..."],
-    unavailable: ["off", "On-device: unavailable (cloud only)"],
+    unavailable: ["off", isNativeApp ? "On-device: this phone has no Gemini Nano (cloud only)" : "On-device: unavailable (cloud only)"],
     unsupported: ["off", "On-device: not supported in this browser (cloud only)"],
   };
   const [cls, label] = map[st] ?? ["off", `On-device: ${st}`];
@@ -511,7 +511,7 @@ $<HTMLTextAreaElement>("question").addEventListener("keydown", (e) => {
 function friendly(e: unknown): string {
   const m = (e as Error)?.message ?? String(e);
   if (!navigator.onLine) return `The on-device model couldn't make this call and you're offline. (${m})`;
-  if (/\[(429|500|503) ?\]|high demand|overloaded|unavailable/i.test(m))
+  if (isBusyError(e))
     return "Google's cloud models are swamped right now. Zeb tried both of them a few times. Wait a minute and ask again.";
   return `The ref couldn't make that call: ${m}`;
 }
@@ -639,6 +639,11 @@ function renderRulebook() {
 function askAloud(q: string) {
   $<HTMLTextAreaElement>("question").value = q;
   $("btn-call").click();
+}
+if (isNativeApp) {
+  // No speech recognition in the Android WebView: hide the voice buttons instead of failing on tap.
+  $("btn-mic").classList.add("hidden");
+  $("btn-wake").classList.add("hidden");
 }
 $("btn-mic").onclick = async () => {
   if (!canListen()) return setZeb("depends", "This browser can't listen. Type your question instead.");
