@@ -1,6 +1,6 @@
 // The referee: on-device first rulings, cloud appeals, and cloud variation scouting.
-import type { Part } from "firebase/ai";
-import { refereeModel, cloudRefereeModel, appealsModel, variationsModel, plainCloudModel, settings, retrying } from "./firebase";
+import type { Part, GenerativeModel } from "firebase/ai";
+import { refereeModel, cloudRefereeModel, appealsModel, variationsModel, plainCloudModel, settings, retrying, isBusyError } from "./firebase";
 import { retrieve, type Game, type Section, type HouseRule } from "./store";
 
 export type Verdict = "YES" | "NO" | "DEPENDS";
@@ -66,6 +66,17 @@ function withPhoto(prompt: string, photo?: Part): string | (string | Part)[] {
   return photo ? [prompt, photo] : prompt;
 }
 
+/** Cloud ruling that survives "high demand": retry the default model, then switch to the backup model. */
+async function cloudCall(request: Parameters<GenerativeModel["generateContent"]>[0]) {
+  try {
+    return await retrying(() => cloudRefereeModel().generateContent(request), 2);
+  } catch (e) {
+    const backup = settings.appeal_model;
+    if (!isBusyError(e) || !backup || backup === settings.cloud_model) throw e;
+    return await retrying(() => cloudRefereeModel(backup).generateContent(request), 3);
+  }
+}
+
 const ON_DEVICE_TIMEOUT_MS = 30_000;
 let deviceBusy = false;
 
@@ -78,7 +89,7 @@ export async function callIt(game: Game, question: string, photo?: Part, onSlow?
   // If an earlier on-device call is still grinding, don't queue another one behind it.
   if (deviceBusy && navigator.onLine) {
     onSlow?.();
-    const res = await retrying(() => cloudRefereeModel().generateContent(request));
+    const res = await cloudCall(request);
     return {
       ...parse(res.response.text()),
       source: "in_cloud",
@@ -96,15 +107,25 @@ export async function callIt(game: Game, question: string, photo?: Part, onSlow?
   const stalled = new Promise<"stalled">((resolve) => {
     timer = setTimeout(() => resolve("stalled"), ON_DEVICE_TIMEOUT_MS);
   });
-  let res = await Promise.race([primary, stalled]);
+  let res = await Promise.race([
+    primary.catch((e) => {
+      // No on-device model (e.g. phones): the SDK went to the cloud and that call hit a busy error.
+      if (navigator.onLine && isBusyError(e)) return "busy" as const;
+      throw e;
+    }),
+    stalled,
+  ]);
   clearTimeout(timer);
   let fellBack = false;
-  if (res === "stalled") {
+  if (res === "busy") {
+    res = await cloudCall(request);
+    fellBack = true;
+  } else if (res === "stalled") {
     if (!navigator.onLine) res = await primary; // offline: keep waiting for the device
     else {
       onSlow?.();
       primary.catch(() => {}); // let the slow on-device call finish quietly
-      res = await retrying(() => cloudRefereeModel().generateContent(request));
+      res = await cloudCall(request);
       fellBack = true;
     }
   }

@@ -128,20 +128,29 @@ export async function retrying<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
   }
 }
 
-let _cloudReferee: GenerativeModel | null = null;
-/** Same referee, cloud only - used when the on-device model stalls. */
-export function cloudRefereeModel(): GenerativeModel {
-  return (_cloudReferee ??= getGenerativeModel(ai, {
+/** True for temporary capacity errors worth retrying or switching models on. */
+export function isBusyError(e: unknown): boolean {
+  return /\[(429|500|503) ?\]|high demand|overloaded|unavailable/i.test(String((e as Error)?.message ?? e));
+}
+
+const _cloudReferees = new Map<string, GenerativeModel>();
+/** Same referee, cloud only - used when the on-device model stalls or is busy.
+ *  Pass a model name to use a backup model when the default one is overloaded. */
+export function cloudRefereeModel(model: string = settings.cloud_model): GenerativeModel {
+  if (_cloudReferees.has(model)) return _cloudReferees.get(model)!;
+  const m = getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_IN_CLOUD,
     inCloudParams: {
-      model: settings.cloud_model,
+      model,
       generationConfig: {
         temperature: 0.2,
         responseMimeType: "application/json",
         responseSchema: rulingSchema,
       },
     },
-  }));
+  });
+  _cloudReferees.set(model, m);
+  return m;
 }
 
 /** Appeals court: always cloud, reads the entire rulebook plus the first ruling.

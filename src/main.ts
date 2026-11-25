@@ -511,6 +511,8 @@ $<HTMLTextAreaElement>("question").addEventListener("keydown", (e) => {
 function friendly(e: unknown): string {
   const m = (e as Error)?.message ?? String(e);
   if (!navigator.onLine) return `The on-device model couldn't make this call and you're offline. (${m})`;
+  if (/\[(429|500|503) ?\]|high demand|overloaded|unavailable/i.test(m))
+    return "Google's cloud models are swamped right now. Zeb tried both of them a few times. Wait a minute and ask again.";
   return `The ref couldn't make that call: ${m}`;
 }
 function alertError(e: unknown) {
