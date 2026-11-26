@@ -79,6 +79,19 @@ class ZebBridge(private val activity: AppCompatActivity, private val web: WebVie
                 val text = if (obj != null) json.encodeToString(RulingOut.serializer(), obj) else res.response.text ?: ""
                 JSONObject().put("text", text).put("source", source(res.response.inferenceSource))
             }
+            // Lessons: same hybrid routing as rulings, a longer answer.
+            "lesson", "lesson_cloud" -> {
+                val mode = if (kind == "lesson") InferenceMode.PREFER_ON_DEVICE else InferenceMode.ONLY_IN_CLOUD
+                val model = ai.generativeModel(
+                    modelName = modelName,
+                    generationConfig = generationConfig { temperature = temp },
+                    onDeviceConfig = OnDeviceConfig(mode = mode, maxOutputTokens = 700, temperature = temp),
+                )
+                val res = model.generateObject(LessonOut.firebaseAISchema(), prompt)
+                val obj = runCatching { res.getObject(0) }.getOrNull()
+                val text = if (obj != null) json.encodeToString(LessonOut.serializer(), obj) else res.response.text ?: ""
+                JSONObject().put("text", text).put("source", source(res.response.inferenceSource))
+            }
             "ingest" -> {
                 val section = Schema.obj(mapOf("id" to Schema.string(), "title" to Schema.string(), "text" to Schema.string()))
                 val model = ai.generativeModel(

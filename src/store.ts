@@ -25,6 +25,8 @@ export interface Game {
   /** Built-in library game (public/games.json); only saved to this device once you change it. */
   library?: boolean;
   category?: string;
+  /** Saved beginner lesson, so it opens instantly and offline next time. */
+  lesson?: import("./referee").Lesson;
 }
 
 const PREFIX = "game:";

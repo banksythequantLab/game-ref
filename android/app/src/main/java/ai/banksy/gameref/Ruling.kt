@@ -26,3 +26,25 @@ data class RulingOut(
 ) {
     companion object
 }
+
+/** A beginner lesson ("how do you play X?"), same shape as the web lessonSchema. */
+@Serializable
+@Generable(description = "A short beginner lesson on how to play a game")
+data class LessonOut(
+    @Guide(description = "One sentence on how you win")
+    val goal: String,
+    @Guide(description = "How many players and what equipment, one sentence")
+    val needs: String,
+    @Guide(description = "2 to 5 short setup steps")
+    val setup: List<String>,
+    @Guide(description = "3 to 6 short steps for a turn, ending with how a hand or round ends")
+    val turn: List<String>,
+    @Guide(description = "How the whole game ends and who wins")
+    val winning: String,
+    @Guide(description = "2 to 3 beginner mistakes")
+    val tips: List<String>,
+    @Guide(description = "Ids of the rule sections used")
+    val citedRuleIds: List<String>,
+) {
+    companion object
+}

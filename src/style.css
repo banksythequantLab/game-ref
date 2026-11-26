@@ -209,3 +209,13 @@ ul.board { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8
 .credit a { color: #5aa9ff; }
 button.listening { border-color: #ff5a5f; color: #ff5a5f; animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,90,95,.4); } 50% { box-shadow: 0 0 0 6px rgba(255,90,95,0); } }
+
+/* ---------- Learn to play ---------- */
+.learn h2 span { color: var(--gold, #f5c518); }
+.lesson h3 { margin: 14px 0 6px; font-size: 1rem; }
+.lesson ol, .lesson ul { margin: 0 0 4px 1.2em; padding: 0; }
+.lesson li { margin: 4px 0; line-height: 1.45; }
+.lesson .goal { font-size: 1.05rem; }
+.lesson .walk { margin-top: 12px; gap: 8px; align-items: center; }
+.walk-step { margin-top: 10px; padding: 14px 16px; border-left: 4px solid #f5c518; background: rgba(245, 197, 24, .08);
+  border-radius: 8px; font-size: 1.15rem; line-height: 1.45; }

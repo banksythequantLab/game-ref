@@ -86,40 +86,6 @@ export function speak(text: string): void {
   speechSynthesis.speak(u);
 }
 
-// ---------------- Rules Lawyer of the Night ----------------
-export interface Night {
-  players: string[];
-  wins: Record<string, number>;
-  yellows: Record<string, number>;
-  calls: number;
-  started: number;
-}
-const NIGHT_KEY = "gameref:night";
-
-export function loadNight(): Night {
-  try {
-    const n = JSON.parse(localStorage.getItem(NIGHT_KEY) ?? "null");
-    if (n && Array.isArray(n.players)) return n;
-  } catch {
-    /* fresh night */
-  }
-  return { players: [], wins: {}, yellows: {}, calls: 0, started: Date.now() };
-}
-export function saveNight(n: Night): void {
-  try {
-    localStorage.setItem(NIGHT_KEY, JSON.stringify(n));
-  } catch {
-    /* storage blocked: the night just won't survive a reload */
-  }
-}
-export function leader(n: Night): string | null {
-  let best: string | null = null;
-  for (const p of n.players) if ((n.wins[p] ?? 0) > 0 && (!best || (n.wins[p] ?? 0) > (n.wins[best] ?? 0))) best = p;
-  return best;
-}
-/** Two yellow cards = red card: out of challenges for the night. */
-export const isRedCarded = (n: Night, p: string) => (n.yellows[p] ?? 0) >= 2;
-
 // ---------------- "Hey Zeb" (Web Speech recognition, on-device when Chrome has the language pack) ----------------
 type Rec = {
   lang: string;

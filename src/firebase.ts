@@ -142,6 +142,20 @@ export const sectionsSchema = Schema.object({
   },
 });
 
+// A beginner lesson: how to play a game, built from its rulebook.
+export const lessonSchema = Schema.object({
+  properties: {
+    goal: Schema.string(),
+    needs: Schema.string(),
+    setup: Schema.array({ items: Schema.string() }),
+    turn: Schema.array({ items: Schema.string() }),
+    winning: Schema.string(),
+    tips: Schema.array({ items: Schema.string() }),
+    citedRuleIds: Schema.array({ items: Schema.string() }),
+  },
+  propertyOrdering: ["goal", "needs", "setup", "turn", "winning", "tips", "citedRuleIds"],
+});
+
 const ON_DEVICE_IO = {
   expectedInputs: [{ type: "text" as const, languages: ["en"] }, { type: "image" as const }],
   expectedOutputs: [{ type: "text" as const, languages: ["en"] }],
@@ -182,6 +196,25 @@ export async function retrying<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
       await new Promise((r) => setTimeout(r, 1500 * 2 ** i));
     }
   }
+}
+
+const _lessons = new Map<string, GenerativeModel>();
+/** Lesson writer: on-device first like rulings (cloudOnly for the fallback path). */
+export function lessonModel(cloudOnly = false): GenerativeModel {
+  const key = `${cloudOnly}|${settings.cloud_model}`;
+  if (_lessons.has(key)) return _lessons.get(key)!;
+  const m = native
+    ? nativeModel(cloudOnly ? "lesson_cloud" : "lesson", () => settings.cloud_model, 0.3)
+    : getGenerativeModel(ai, {
+        mode: cloudOnly ? InferenceMode.ONLY_IN_CLOUD : InferenceMode.PREFER_ON_DEVICE,
+        onDeviceParams: { createOptions: ON_DEVICE_IO, promptOptions: { responseConstraint: lessonSchema } },
+        inCloudParams: {
+          model: settings.cloud_model,
+          generationConfig: { temperature: 0.3, responseMimeType: "application/json", responseSchema: lessonSchema },
+        },
+      });
+  _lessons.set(key, m);
+  return m;
 }
 
 /** True for temporary capacity errors worth retrying or switching models on. */

@@ -1,6 +1,6 @@
 // The referee: on-device first rulings, cloud appeals, and cloud variation scouting.
 import type { Part, GenerativeModel } from "firebase/ai";
-import { refereeModel, cloudRefereeModel, appealsModel, variationsModel, plainCloudModel, settings, retrying, isBusyError } from "./firebase";
+import { refereeModel, cloudRefereeModel, appealsModel, variationsModel, plainCloudModel, lessonModel, settings, retrying, isBusyError } from "./firebase";
 import { retrieve, type Game, type Section, type HouseRule } from "./store";
 
 export type Verdict = "YES" | "NO" | "DEPENDS";
@@ -218,5 +218,115 @@ VARIANT | <short name> | <one or two sentences describing exactly how play chang
     sources: (gm?.groundingChunks ?? [])
       .map((c) => ({ title: c.web?.title ?? "", uri: c.web?.uri ?? "" }))
       .filter((s) => s.uri),
+  };
+}
+
+// ---------------- Teaching: "how do I play this?" ----------------
+
+export interface Lesson {
+  goal: string;
+  needs: string;
+  setup: string[];
+  turn: string[];
+  winning: string;
+  tips: string[];
+  citedRuleIds: string[];
+  source: "on_device" | "in_cloud";
+  ms: number;
+  at: number;
+}
+
+/** True when a question asks to be taught rather than for a ruling ("How do you play gin?"). */
+export function isTeachQuestion(q: string): boolean {
+  return /\bhow (do|does|to|can) (you|i|we|one|it)?\s*(play|start|set ?up|begin|win|score|work)\b|\bteach me\b|\bexplain (the )?(rules|game)\b|\b(what are|walk me through) the rules\b|\bhow is .* played\b|\bwhat'?s the (goal|object|point)\b/i.test(q);
+}
+
+function lessonPrompt(game: Game, sections: Section[]): string {
+  return `You are Zeb, a friendly referee teaching a brand-new player how to play "${game.name}".
+Using ONLY the RULES below (and the active house rules), write a short beginner lesson:
+- "goal": one sentence on how you win.
+- "needs": how many players (a number or range) and what equipment, in one sentence.
+- "setup": 2-5 short steps to set up.
+- "turn": 3-6 short steps for what you do on your turn, in order, ending with how a hand or round ends (for example knocking, going out or scoring).
+- "winning": one or two sentences on how the whole game ends and who wins.
+- "tips": 2-3 mistakes beginners make.
+- "citedRuleIds": the bracketed rule ids you used.
+Every step is one plain sentence under 25 words. If the rules don't say something, leave it out rather than guessing.
+
+RULES:
+${sectionsBlock(sections)}
+
+ACTIVE HOUSE RULES:
+${houseBlock(game.houseRules)}`;
+}
+
+function parseLesson(text: string) {
+  const j = JSON.parse(text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, ""));
+  const list = (v: unknown) => (Array.isArray(v) ? v.map(String).filter(Boolean) : []);
+  return {
+    goal: String(j.goal ?? ""),
+    needs: String(j.needs ?? ""),
+    setup: list(j.setup),
+    turn: list(j.turn),
+    winning: String(j.winning ?? ""),
+    tips: list(j.tips),
+    citedRuleIds: list(j.citedRuleIds),
+  };
+}
+
+/** Builds a lesson on-device first; if the device stalls or the default cloud model is busy, the cloud writes it. */
+export async function teach(game: Game, onSlow?: () => void): Promise<Lesson> {
+  const sections = retrieve(game, "object goal aim how to play setup deal equipment players turn move play win score end game", 8, 7000);
+  const prompt = lessonPrompt(game, sections);
+  const t0 = performance.now();
+  const cloud = async () => {
+    try {
+      return await retrying(() => lessonModel(true).generateContent(prompt), 2);
+    } catch (e) {
+      const backup = settings.appeal_model;
+      if (!isBusyError(e) || !backup || backup === settings.cloud_model) throw e;
+      const prev = settings.cloud_model;
+      settings.cloud_model = backup; // lesson models are keyed by model name
+      try {
+        return await retrying(() => lessonModel(true).generateContent(prompt), 3);
+      } finally {
+        settings.cloud_model = prev;
+      }
+    }
+  };
+  let fellBack = false;
+  let res;
+  if (deviceBusy && navigator.onLine) {
+    onSlow?.();
+    res = await cloud();
+    fellBack = true;
+  } else {
+    deviceBusy = true;
+    const primary = lessonModel().generateContent(prompt);
+    primary.finally(() => (deviceBusy = false)).catch(() => {});
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stalled = new Promise<"stalled">((r) => (timer = setTimeout(() => r("stalled"), ON_DEVICE_TIMEOUT_MS)));
+    const first = await Promise.race([
+      primary.catch((e) => {
+        if (navigator.onLine && isBusyError(e)) return "busy" as const;
+        throw e;
+      }),
+      stalled,
+    ]);
+    clearTimeout(timer);
+    if (first === "busy" || (first === "stalled" && navigator.onLine)) {
+      if (first === "stalled") onSlow?.();
+      primary.catch(() => {});
+      res = await cloud();
+      fellBack = true;
+    } else {
+      res = first === "stalled" ? await primary : first;
+    }
+  }
+  return {
+    ...parseLesson(res.response.text()),
+    source: fellBack || res.response.inferenceSource === "in_cloud" ? "in_cloud" : "on_device",
+    ms: Math.round(performance.now() - t0),
+    at: Date.now(),
   };
 }

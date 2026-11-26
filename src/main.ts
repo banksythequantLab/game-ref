@@ -4,11 +4,11 @@ import { loadSettings, onDeviceStatus, downloadOnDeviceModel, isNativeApp, isBus
 import { listGames, saveGame, deleteGame, type Game, type HouseRule } from "./store";
 import { SAMPLES } from "./samples";
 import { gameFromPdf, gameFromText } from "./ingest";
-import { callIt, appeal, needsAppeal, findVariations, type Ruling } from "./referee";
+import { callIt, appeal, needsAppeal, findVariations, teach, isTeachQuestion, type Ruling, type Lesson } from "./referee";
 import { zeb, line, whistle, preloadZeb, type Mood } from "./mascot";
 import { searchWiki, gameFromWiki } from "./wiki";
 import {
-  playClip, stopClip, clipsOn, speak, loadNight, saveNight, leader, isRedCarded,
+  playClip, stopClip, clipsOn, speak,
   canListen, listenOnce, startWakeWord, stopWakeWord, usingLocalSpeech, type Clip,
 } from "./fun";
 
@@ -165,6 +165,8 @@ function selectGame(id: string) {
   renderHouse();
   renderRulebook();
   renderHistory();
+  walk = null;
+  renderLesson();
 }
 $<HTMLSelectElement>("game-select").onchange = (e) => selectGame((e.target as HTMLSelectElement).value);
 
@@ -324,118 +326,24 @@ function rulingHtml(r: Ruling, first?: Ruling): string {
     .join("");
   const overturned = first && first.verdict !== r.verdict ? `<p class="muted">Appeal overturned the first call (${esc(first.verdict.replace("_", " "))}).</p>` : first ? `<p class="muted">Appeal upheld the first call.</p>` : "";
   const canAppeal = r.stage === "first" && navigator.onLine;
-  const night = loadNight();
-  const picker =
-    night.players.length && !first
-      ? `<div class="picker" id="won-picker"><span class="muted">Who won this call?</span>${night.players
-          .map((p) => `<button class="chip-btn" data-won="${esc(p)}">${esc(p)}</button>`)
-          .join("")}<button class="chip-btn" data-won="">Nobody</button></div>`
-      : "";
   return `<div class="ruling ${r.verdict}">
     <div class="verdict">${label}</div>
     <p class="said">${esc(r.ruling)}</p>
     <p class="muted">${esc(r.explanation)}</p>
     ${overturned}
     <div class="meta">${sourceBadge(r)}${canAppeal ? `<button class="flag" id="btn-appeal">🚩 Throw the challenge flag</button>` : ""}</div>
-    <div id="flag-picker"></div>
-    ${picker}
     <div class="cites">${cites}</div>
     ${game.source ? `<p class="credit">${creditHtml().replace(/^ ?<span class="credit">· /, "").replace(/<\/span>$/, "")}</p>` : ""}
   </div>`;
 }
 
-// ---------------- Rules Lawyer of the Night ----------------
-function renderNight() {
-  const n = loadNight();
-  const lead = leader(n);
-  const rows = [...n.players].sort((a, b) => (n.wins[b] ?? 0) - (n.wins[a] ?? 0));
-  $("night-board").innerHTML = rows.length
-    ? rows
-        .map((p) => {
-          const y = n.yellows[p] ?? 0;
-          const cards = isRedCarded(n, p) ? `<span class="rcard" title="Red card"></span>` : "<span class=\"ycard\" title=\"Yellow card\"></span>".repeat(y);
-          return `<li class="${p === lead ? "lead" : ""}"><span class="crown">${p === lead ? "👑" : "🎲"}</span><span class="pname">${esc(p)}</span>
-            <span class="cards">${cards}</span><span class="pts">${n.wins[p] ?? 0} won</span>
-            <button class="ghost small" data-rm="${esc(p)}" aria-label="Remove ${esc(p)}">✕</button></li>`;
-        })
-        .join("")
-    : `<li class="muted">No players yet.</li>`;
-  $("night-sub").textContent = lead
-    ? `${lead} is tonight's Rules Lawyer with ${n.wins[lead]} ${n.wins[lead] === 1 ? "win" : "wins"}. ${n.calls} calls made.`
-    : "Add the players. Zeb keeps score of who wins each argument, and hands out yellow cards for bad challenges.";
-  $("night-board").querySelectorAll<HTMLButtonElement>("button[data-rm]").forEach((b) => {
-    b.onclick = () => {
-      const m = loadNight();
-      m.players = m.players.filter((x) => x !== b.dataset.rm);
-      saveNight(m);
-      renderNight();
-    };
-  });
-}
-$("btn-night-add").onclick = () => {
-  const inp = $<HTMLInputElement>("night-name");
-  const name = inp.value.trim().slice(0, 24);
-  if (!name) return inp.focus();
-  const n = loadNight();
-  if (!n.players.some((p) => p.toLowerCase() === name.toLowerCase())) n.players.push(name);
-  saveNight(n);
-  inp.value = "";
-  renderNight();
-};
-$<HTMLInputElement>("night-name").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") $("btn-night-add").click();
-});
-$("btn-night-reset").onclick = () => {
-  const n = loadNight();
-  saveNight({ players: n.players, wins: {}, yellows: {}, calls: 0, started: Date.now() });
-  renderNight();
-  setZeb("idle", "New game night! Scores are back to zero.");
-};
-
-function award(player: string, why: string) {
-  const n = loadNight();
-  const before = leader(n);
-  n.wins[player] = (n.wins[player] ?? 0) + 1;
-  saveNight(n);
-  renderNight();
-  const after = leader(n);
-  const msg = after === player && before !== player ? `Point to ${player} — and a new Rules Lawyer of the Night!` : `Point to ${player}${why}.`;
-  setZeb("upheld", msg);
-  speak(msg);
-}
-
-function wireWinPicker() {
-  document.querySelectorAll<HTMLButtonElement>("#won-picker button[data-won]").forEach((b) => {
-    b.onclick = () => {
-      document.querySelectorAll<HTMLButtonElement>("#won-picker button").forEach((x) => (x.disabled = true));
-      b.classList.add("won");
-      const n = loadNight();
-      n.calls++;
-      saveNight(n);
-      if (b.dataset.won) award(b.dataset.won, "");
-      else renderNight();
-    };
-  });
-}
-
-/** Challenge flag: pick who's throwing it (if players are set up), then go to the replay booth. */
+// ---------------- Challenge flag (no names, no scores) ----------------
 function wireFlag(first: Ruling) {
   const btn = $<HTMLButtonElement>("btn-appeal");
-  if (!btn) return;
-  btn.onclick = () => {
-    const n = loadNight();
-    const eligible = n.players.filter((p) => !isRedCarded(n, p));
-    if (!n.players.length) return throwFlag(first, null);
-    $("flag-picker").innerHTML = `<div class="picker"><span class="muted">Who's throwing the flag?</span>${n.players
-      .map((p) => `<button class="chip-btn" data-ch="${esc(p)}" ${eligible.includes(p) ? "" : "disabled title=\"Red-carded: out of challenges tonight\""}>${esc(p)}${eligible.includes(p) ? "" : " 🟥"}</button>`)
-      .join("")}</div>`;
-    $("flag-picker").querySelectorAll<HTMLButtonElement>("button[data-ch]").forEach((b) => {
-      b.onclick = () => throwFlag(first, b.dataset.ch!);
-    });
-  };
+  if (btn) btn.onclick = () => throwFlag(first);
 }
 
-function throwFlag(first: Ruling, challenger: string | null) {
+function throwFlag(first: Ruling) {
   const btn = $<HTMLButtonElement>("btn-appeal");
   const r = btn?.getBoundingClientRect();
   const f = document.createElement("div");
@@ -447,15 +355,14 @@ function throwFlag(first: Ruling, challenger: string | null) {
   setTimeout(() => f.remove(), 1000);
   whistle(1);
   btn?.remove();
-  $("flag-picker").innerHTML = "";
-  speak(challenger ? `${challenger} has thrown the challenge flag! Going to the replay booth.` : "Challenge flag! Going to the replay booth.");
-  runAppeal(first, challenger);
+  speak("Challenge flag! Going to the replay booth.");
+  runAppeal(first);
 }
 
 let lastFirst: Ruling | undefined;
 let lastPhoto: Part | undefined;
 
-async function runAppeal(first: Ruling, challenger: string | null = null) {
+async function runAppeal(first: Ruling) {
   const box = $("ruling");
   box.insertAdjacentHTML("beforeend", `<div class="thinking" id="appeal-thinking">Sending it up to the cloud appeals referee (full rulebook)</div>`);
   setZeb("appeal");
@@ -465,26 +372,6 @@ async function runAppeal(first: Ruling, challenger: string | null = null) {
     box.innerHTML = rulingHtml(r, first);
     pushHistory(r);
     react(r, first);
-    if (challenger) {
-      const reversed = first.verdict !== r.verdict;
-      const n = loadNight();
-      if (reversed) {
-        setTimeout(() => award(challenger, " for a winning challenge"), 3500);
-      } else {
-        n.yellows[challenger] = (n.yellows[challenger] ?? 0) + 1;
-        saveNight(n);
-        renderNight();
-        const red = isRedCarded(n, challenger);
-        const msg = red
-          ? `That's a second yellow for ${challenger}. Red card! No more challenges for ${challenger} tonight.`
-          : `The call stands. Yellow card for ${challenger}!`;
-        setTimeout(() => {
-          setZeb("no", msg);
-          whistle(red ? 3 : 1);
-          speak(msg);
-        }, 3500);
-      }
-    }
   } catch (e) {
     stopClip();
     $("appeal-thinking")?.remove();
@@ -493,11 +380,127 @@ async function runAppeal(first: Ruling, challenger: string | null = null) {
   }
 }
 
+// ---------------- Learn to play: lessons + a spoken walkthrough ----------------
+let walk: { steps: string[]; i: number } | null = null;
+
+function lessonSteps(l: Lesson): string[] {
+  return [
+    `The goal: ${l.goal}`,
+    l.needs ? `You need: ${l.needs}` : "",
+    ...l.setup.map((s, i) => `Setup, step ${i + 1}: ${s}`),
+    ...l.turn.map((s, i) => `On your turn, step ${i + 1}: ${s}`),
+    `How it ends: ${l.winning}`,
+    ...l.tips.map((s) => `Beginner tip: ${s}`),
+  ].filter(Boolean);
+}
+
+function renderLesson() {
+  $("learn-game").textContent = game.name;
+  const l = game.lesson;
+  $("btn-teach").textContent = l ? "Rewrite lesson" : "Teach me this game";
+  if (!l) {
+    $("lesson").innerHTML = "";
+    return;
+  }
+  const ol = (items: string[]) => `<ol>${items.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>`;
+  const where = l.source === "on_device" ? "⚡ Written on-device · Gemini Nano" : "☁️ Written in the cloud · Gemini";
+  $("lesson").innerHTML = `<div class="lesson">
+    <p class="goal"><b>Goal:</b> ${esc(l.goal)}</p>
+    ${l.needs ? `<p><b>You need:</b> ${esc(l.needs)}</p>` : ""}
+    ${l.setup.length ? `<h3>Set up</h3>${ol(l.setup)}` : ""}
+    ${l.turn.length ? `<h3>On your turn</h3>${ol(l.turn)}` : ""}
+    <h3>How it ends</h3><p>${esc(l.winning)}</p>
+    ${l.tips.length ? `<h3>Beginner mistakes</h3><ul>${l.tips.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}
+    <div class="meta"><span class="badge ${l.source}">${where}</span><span class="badge plain">${l.ms} ms</span>
+      ${l.citedRuleIds.length ? `<span class="badge plain">From rules ${esc(l.citedRuleIds.slice(0, 6).join(", "))}</span>` : ""}</div>
+    <div class="row walk">
+      <button id="btn-walk" class="primary">▶ Walk me through it</button>
+      <button id="btn-walk-back" class="ghost hidden">◀ Back</button>
+      <button id="btn-walk-next" class="ghost hidden">Next ▶</button>
+      <span class="muted" id="walk-pos"></span>
+    </div>
+    <p class="walk-step hidden" id="walk-step"></p>
+    ${game.source ? `<p class="credit">${creditHtml().replace(/^ ?<span class="credit">· /, "").replace(/<\/span>$/, "")}</p>` : ""}
+  </div>`;
+  $("btn-walk").onclick = () => {
+    walk = { steps: lessonSteps(l), i: 0 };
+    $("btn-walk").classList.add("hidden");
+    $("btn-walk-back").classList.remove("hidden");
+    $("btn-walk-next").classList.remove("hidden");
+    showStep();
+  };
+  $("btn-walk-back").onclick = () => {
+    if (!walk) return;
+    walk.i = Math.max(walk.i - 1, 0);
+    showStep();
+  };
+  $("btn-walk-next").onclick = () => {
+    if (!walk) return;
+    if (walk.i === walk.steps.length - 1) {
+      walk = null;
+      const bye = `That's ${game.name}! Ask me anything while you play.`;
+      setZeb("yes", bye);
+      speak(bye);
+      renderLesson();
+      return;
+    }
+    walk.i++;
+    showStep();
+  };
+}
+
+function showStep() {
+  if (!walk) return;
+  const s = walk.steps[walk.i];
+  const el = $("walk-step");
+  el.textContent = s;
+  el.classList.remove("hidden");
+  $("walk-pos").textContent = `Step ${walk.i + 1} of ${walk.steps.length}`;
+  $("btn-walk-next").textContent = walk.i === walk.steps.length - 1 ? "Done ✓" : "Next ▶";
+  setZeb("idle", s);
+  speak(s);
+}
+
+async function runLesson() {
+  const btn = $<HTMLButtonElement>("btn-teach");
+  btn.disabled = true;
+  walk = null;
+  $("learn-card").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("lesson").innerHTML = `<div class="thinking">Zeb is reading the ${esc(game.name)} rulebook</div>`;
+  setZeb("thinking", `Let me teach you ${game.name}. Reading the rulebook...`);
+  try {
+    const l = await teach(game, () => {
+      $("lesson").innerHTML = `<div class="thinking">On-device model is still warming up - handing the lesson to the cloud</div>`;
+    });
+    game.lesson = l;
+    await saveGame(game);
+    savedIds.add(game.id);
+    renderLesson();
+    setZeb("yes", `Here's how to play ${game.name}. Tap "Walk me through it" and I'll take you step by step.`);
+    speak(`Here's how to play ${game.name}. ${l.goal}`);
+  } catch (e) {
+    $("lesson").innerHTML = `<p class="error">${esc(friendly(e))}</p>`;
+    setZeb("depends", "I couldn't write that lesson. Try again in a moment.");
+  }
+  btn.disabled = false;
+}
+$("btn-teach").onclick = runLesson;
+
 $("btn-call").onclick = async () => {
   const q = $<HTMLTextAreaElement>("question").value.trim();
   if (!q) return $("question").focus();
   const btn = $<HTMLButtonElement>("btn-call");
   const box = $("ruling");
+  // "How do you play gin?" wants a lesson, not a YES/NO ruling.
+  if (isTeachQuestion(q) && !photo) {
+    box.innerHTML = `<p class="muted">That's a how-to-play question, so Zeb is teaching it below in Learn to play.</p>`;
+    if (game.lesson) {
+      $("learn-card").scrollIntoView({ behavior: "smooth", block: "start" });
+      setZeb("yes", `Here's how to play ${game.name}. Tap "Walk me through it" and I'll take you step by step.`);
+      speak(`Here's how to play ${game.name}. ${game.lesson.goal}`);
+    } else await runLesson();
+    return;
+  }
   btn.disabled = true;
   box.innerHTML = `<div class="thinking">The ref is checking ${game.sections.length} rules</div>`;
   setZeb("thinking");
@@ -514,7 +517,6 @@ $("btn-call").onclick = async () => {
     pushHistory(r);
     react(r);
     wireFlag(r);
-    wireWinPicker();
     if (needsAppeal(r, !!lastPhoto) && navigator.onLine) {
       $("btn-appeal")?.remove();
       const why = lastPhoto ? "Photo ruling - getting a second look from the cloud referee." : "Low confidence on the first call - escalating automatically.";
@@ -566,7 +568,6 @@ function renderHistory() {
           const r = items[Number(li.dataset.i)].r;
           $("ruling").innerHTML = rulingHtml(r);
           if (r.stage === "first") wireFlag(r);
-          wireWinPicker();
         })
     );
 }
@@ -717,7 +718,8 @@ $("btn-wake").onclick = async () => {
   if (icon) icon.href = "/zeb/favicon.png";
   preloadZeb();
   renderMute();
-  renderNight();
+  // The old "Rules Lawyer of the Night" scoreboard kept player names; clear anything it left behind.
+  try { localStorage.removeItem("gameref:night"); } catch { /* storage may be blocked */ }
   setZeb("idle");
   // First visit this session: Zeb waves hello on the jumbotron.
   try {
