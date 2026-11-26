@@ -33,7 +33,7 @@ Firebase AI Logic is imported and called at runtime in [`src/firebase.ts`](src/f
 - **Learn to play**: "Teach me this game" (or ask "How do you play gin?") turns the rulebook into a beginner lesson (goal, setup, your turn, how it ends, beginner mistakes), written on-device first like rulings, saved for offline, and Zeb walks you through it step by step out loud
 - **Challenge flag**: throw the 🚩 to send a call to the cloud replay booth, which reads the whole rulebook and upholds or overturns it
 - **Ask out loud / "Hey Zeb"**: Web Speech recognition, on-device when Chrome has the language pack
-- 69 games built in and available offline: original rulebooks for Chess, Checkers and Crazy Eights, plus 66 card, board, dice and yard games whose rules sections come from Wikipedia (CC BY-SA 4.0, credited on every ruling). `node tools/bundle-games.ts` rebuilds `public/games.json`
+- 83 games built in and available offline: original rulebooks for Chess, Checkers and Crazy Eights, plus 80 card, poker, board, dice and yard games (including 15 poker games and variants: Texas Hold 'em, Omaha, Seven-Card Stud, Five-Card Draw, Razz, Short Deck, Badugi, Lowball, Chinese Poker, Pai Gow, Three Card Poker, Caribbean Stud, plus hand rankings and betting rules) whose rules sections come from Wikipedia (CC BY-SA 4.0, credited on every ruling). `node tools/bundle-games.ts` rebuilds `public/games.json`
 - Add any game from a PDF or pasted text
 - Verdicts: YES / NO / IT DEPENDS, with the cited rule text expandable under each call
 - House rules table: toggle variants on and off; they override the rulebook

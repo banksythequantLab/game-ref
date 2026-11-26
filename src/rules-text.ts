@@ -44,7 +44,7 @@ export function chunkText(text: string): Section[] {
 }
 
 // Wikipedia sections worth keeping for a referee, and ones to drop.
-const KEEP = /rule|play|game ?play|scor|set ?up|setup|deal|turn|move|win|end|object|equipment|component|card|piece|special|variant|variation|house|penalt|foul|official|tournament|strategy|terminology|glossary|how/i;
+const KEEP = /rule|play|game ?play|scor|set ?up|setup|deal|turn|move|win|end|object|equipment|component|card|piece|special|variant|variation|house|penalt|foul|official|tournament|strategy|terminology|glossary|how|hand|rank|pair|flush|straight|of a kind|bet|blind|\bpots?\b|showdown|ante|raise|limit/i;
 const DROP = /^(history|origin|etymology|reception|legacy|in popular culture|popular culture|culture|media|see also|references|notes|footnotes|further reading|external links|bibliography|sources|awards|sales|development|publication|release|editions?|merchandise|video games?|adaptations?|competitions? results|world champions?)$/i;
 // Spin-offs, media and merchandise that share a word with "rules" but aren't rules.
 const NOISE = /adaptation|game show|slot machine|film|television|\btv\b|fandom|series|merchandis|deck styles|card and deck|h2o|app|video game|online|tournaments? held|records?|celebrit|controvers|lawsuit|sponsor|championship|editions?|parody|unauthori[sz]ed|by locale|play-by-mail|as a phrase|playmaster/i;
