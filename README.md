@@ -33,7 +33,7 @@ Firebase AI Logic is imported and called at runtime in [`src/firebase.ts`](src/f
 - **Challenge flag**: throw the 🚩 to send a call to the cloud replay booth; a failed challenge earns a yellow card, two yellows = red card (no more challenges tonight)
 - **Rules Lawyer of the Night**: add the players, tap who won each call, and Zeb crowns the leader
 - **Ask out loud / "Hey Zeb"**: Web Speech recognition, on-device when Chrome has the language pack
-- Built-in rulebooks for Chess, Checkers and Crazy Eights, so it works immediately
+- 69 games built in and available offline: original rulebooks for Chess, Checkers and Crazy Eights, plus 66 card, board, dice and yard games whose rules sections come from Wikipedia (CC BY-SA 4.0, credited on every ruling). `node tools/bundle-games.ts` rebuilds `public/games.json`
 - Add any game from a PDF or pasted text
 - Verdicts: YES / NO / IT DEPENDS, with the cited rule text expandable under each call
 - House rules table: toggle variants on and off; they override the rulebook
