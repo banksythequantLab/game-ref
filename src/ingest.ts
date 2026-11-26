@@ -5,46 +5,11 @@ import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { ingestModel, retrying } from "./firebase";
 import { slug, type Game, type Section } from "./store";
+import { chunkText } from "./rules-text";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
-const HEADING = /^(\d+(\.\d+)*[.)]?\s+\S.{0,80}|#{1,4}\s+\S.{0,80}|[A-Z][A-Z0-9 '&:,-]{3,60})$/;
-
-/** Split plain text into sections using headings, falling back to ~900-char paragraph chunks. */
-export function chunkText(text: string): Section[] {
-  const lines = text.replace(/\r/g, "").split("\n");
-  const raw: { title: string; body: string[] }[] = [];
-  let cur = { title: "Introduction", body: [] as string[] };
-  for (const line of lines) {
-    const l = line.trim();
-    if (l && l.length < 90 && HEADING.test(l) && !/[.,;]$/.test(l)) {
-      if (cur.body.join(" ").trim()) raw.push(cur);
-      cur = { title: l.replace(/^#+\s*/, ""), body: [] };
-    } else {
-      cur.body.push(l);
-    }
-  }
-  if (cur.body.join(" ").trim()) raw.push(cur);
-
-  const out: Section[] = [];
-  for (const r of raw) {
-    const paras = r.body.join("\n").split(/\n\s*\n/).map((p) => p.replace(/\s+/g, " ").trim()).filter(Boolean);
-    let buf = "";
-    let part = 0;
-    const flush = () => {
-      if (!buf) return;
-      part++;
-      out.push({ id: String(out.length + 1), title: part > 1 ? `${r.title} (cont.)` : r.title, text: buf.trim() });
-      buf = "";
-    };
-    for (const p of paras) {
-      if (buf.length + p.length > 900) flush();
-      buf += (buf ? "\n" : "") + p;
-    }
-    flush();
-  }
-  return out;
-}
+export { chunkText };
 
 async function fileToBase64(file: Blob): Promise<string> {
   const buf = new Uint8Array(await file.arrayBuffer());

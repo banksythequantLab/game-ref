@@ -22,6 +22,9 @@ export interface Game {
   addedAt: number;
   /** Where the rules text came from, when it needs attribution (Wikipedia: CC BY-SA 4.0). */
   source?: { title: string; url: string; license: string; licenseUrl: string };
+  /** Built-in library game (public/games.json); only saved to this device once you change it. */
+  library?: boolean;
+  category?: string;
 }
 
 const PREFIX = "game:";
@@ -41,9 +44,7 @@ export async function listGames(): Promise<Game[]> {
   return games.filter((g): g is Game => !!g).sort((a, b) => a.addedAt - b.addedAt);
 }
 
-export function slug(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "game";
-}
+export { slug } from "./rules-text";
 
 // ---------- Retrieval (BM25) so the on-device model only sees the rules that matter ----------
 

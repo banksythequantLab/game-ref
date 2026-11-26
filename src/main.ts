@@ -111,13 +111,36 @@ addEventListener("online", refreshStatus);
 addEventListener("offline", refreshStatus);
 
 // ---------------- library ----------------
+// The built-in library ships with the app (public/games.json, built by tools/bundle-games.ts).
+let builtIn: Game[] | null = null;
+let savedIds = new Set<string>();
+async function libraryGames(): Promise<Game[]> {
+  if (builtIn) return builtIn;
+  try {
+    builtIn = (await (await fetch("/games.json")).json()) as Game[];
+  } catch {
+    builtIn = []; // not cached yet and offline: the games on this device still work
+  }
+  return builtIn;
+}
+
 async function loadLibrary(selectId?: string) {
   const stored = await listGames();
   const ids = new Set(stored.map((g) => g.id));
   for (const s of SAMPLES) if (!ids.has(s.id)) await saveGame(structuredClone(s));
-  games = await listGames();
+  const mine = await listGames();
+  const mineIds = new Set(mine.map((g) => g.id));
+  savedIds = mineIds;
+  const lib = (await libraryGames()).filter((g) => !mineIds.has(g.id));
+  games = [...mine, ...lib];
+  const opt = (g: Game) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`;
+  const byName = (a: Game, b: Game) => a.name.localeCompare(b.name);
+  const groups = new Map<string, Game[]>();
+  for (const g of lib) groups.set(g.category ?? "More games", [...(groups.get(g.category ?? "More games") ?? []), g]);
   const sel = $<HTMLSelectElement>("game-select");
-  sel.innerHTML = games.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join("");
+  sel.innerHTML =
+    `<optgroup label="Your games">${mine.map(opt).join("")}</optgroup>` +
+    [...groups].map(([cat, gs]) => `<optgroup label="${esc(cat)} (${gs.length})">${gs.sort(byName).map(opt).join("")}</optgroup>`).join("");
   const want = selectId ?? localStorage.getItem("gameref:last") ?? games[0]?.id;
   sel.value = games.some((g) => g.id === want) ? want! : games[0].id;
   selectGame(sel.value);
@@ -134,7 +157,8 @@ function selectGame(id: string) {
     wikipedia: "from Wikipedia",
   };
   $("game-meta").innerHTML = `${game.sections.length} rule sections · ${esc(originLabel[game.origin])}${creditHtml()}`;
-  $("btn-delete").classList.toggle("hidden", game.origin === "sample");
+  // Built-in games can't be deleted; a library game you changed can be reset (deleted back to the original).
+  $("btn-delete").classList.toggle("hidden", game.origin === "sample" || (!!game.library && !savedIds.has(game.id)));
   $("ruling").innerHTML = "";
   $("variations-out").innerHTML = "";
   setZeb("idle", `I'm Zeb. Ask me anything about ${game.name}.`);
