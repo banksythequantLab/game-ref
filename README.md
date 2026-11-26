@@ -30,8 +30,8 @@ Firebase AI Logic is imported and called at runtime in [`src/firebase.ts`](src/f
 - **Any game from Wikipedia**: search a game, Game Ref pulls the article's rules sections (CC BY-SA 4.0), stores them on the device and credits the article on every ruling
 - **Zeb's jumbotron**: 5-second clips of Zeb play on each call (whistle on NO, cheer on YES, replay booth during appeals); 🎬 toggle in the header
 - **Zeb talks**: rulings are read aloud with the browser's built-in speech (works offline); 🔊 toggle covers voice and whistle
-- **Challenge flag**: throw the 🚩 to send a call to the cloud replay booth; a failed challenge earns a yellow card, two yellows = red card (no more challenges tonight)
-- **Rules Lawyer of the Night**: add the players, tap who won each call, and Zeb crowns the leader
+- **Learn to play**: "Teach me this game" (or ask "How do you play gin?") turns the rulebook into a beginner lesson (goal, setup, your turn, how it ends, beginner mistakes), written on-device first like rulings, saved for offline, and Zeb walks you through it step by step out loud
+- **Challenge flag**: throw the 🚩 to send a call to the cloud replay booth, which reads the whole rulebook and upholds or overturns it
 - **Ask out loud / "Hey Zeb"**: Web Speech recognition, on-device when Chrome has the language pack
 - 69 games built in and available offline: original rulebooks for Chess, Checkers and Crazy Eights, plus 66 card, board, dice and yard games whose rules sections come from Wikipedia (CC BY-SA 4.0, credited on every ruling). `node tools/bundle-games.ts` rebuilds `public/games.json`
 - Add any game from a PDF or pasted text
