@@ -15,20 +15,32 @@
     <header class="top">
       <div class="brand"><span id="brand-zeb" class="brand-zeb"></span><div><h1>Game Ref</h1><p>Zeb the Ref knows every rule. Every variation. Instant calls.</p></div></div>
       <div class="chips">
-        <span id="chip-device" class="chip">On-device: checking...</span>
-        <span id="chip-net" class="chip">...</span>
+        <span id="chip-device" class="chip" title="Where Zeb's first ruling runs">Checking Zeb's brain...</span>
         <button id="btn-download" class="small hidden">Download on-device model</button>
-        <button id="btn-mute" class="small ghost" aria-label="Toggle sound">🔊 Sound on</button>
-        <button id="btn-clips" class="small ghost" aria-label="Toggle video clips">🎬 Clips on</button>
+        <details class="settings">
+          <summary class="small" aria-label="Settings">⚙ Settings</summary>
+          <div class="settings-menu">
+            <span id="chip-net" class="chip">...</span>
+            <button id="btn-mute" class="small ghost" aria-label="Toggle sound">🔊 Sound on</button>
+            <button id="btn-clips" class="small ghost" aria-label="Toggle video clips">🎬 Clips on</button>
+          </div>
+        </details>
       </div>
     </header>
 
     <main>
       <section class="card game-bar">
-        <label for="game-select">Game</label>
-        <select id="game-select"></select>
-        <button id="btn-add" class="ghost">+ Add a game</button>
-        <button id="btn-delete" class="ghost danger hidden">Remove</button>
+        <div class="step"><span class="num">1</span> Pick a game</div>
+        <div class="pick-row">
+          <div class="find-wrap">
+            <input id="game-find" type="search" placeholder="🔍 Search games: poker, uno, chess..." autocomplete="off" aria-label="Search games" />
+            <div id="find-list" class="find-list hidden" role="listbox"></div>
+          </div>
+          <select id="game-select" aria-label="All games"></select>
+          <button id="btn-add" class="ghost">+ Add a game</button>
+          <button id="btn-delete" class="ghost danger hidden">Remove</button>
+        </div>
+        <div id="quick-games" class="quick"></div>
         <span id="game-meta" class="muted"></span>
       </section>
 
@@ -54,26 +66,31 @@
       </section>
 
       <section class="card ask">
-        <div class="stage"><div id="zeb-stage" class="zeb-stage"></div><div id="zeb-bubble" class="bubble" aria-live="polite"></div></div>
-        <div id="jumbotron" class="jumbotron hidden"><video playsinline muted preload="auto"></video><div class="jt-label"></div></div>
-        <h2>Ask Zeb</h2>
-        <textarea id="question" rows="3" placeholder="e.g. My pawn just reached the last rank - can I take a second queen?"></textarea>
-        <div class="row">
-          <label class="file" id="photo-label">📷 Photo of the board<input id="photo" type="file" accept="image/*" capture="environment" /></label>
-          <img id="photo-preview" class="hidden" alt="Attached game photo" />
-          <button id="photo-clear" class="ghost small hidden">Remove photo</button>
-          <span class="spacer"></span>
-          <button id="btn-mic" class="ghost" title="Ask out loud">🎤 Ask out loud</button>
-          <button id="btn-wake" class="ghost" title="Hands-free: say Hey Zeb, then your question">👂 Hey Zeb: off</button>
-          <button id="btn-call" class="primary">🟨 Call it</button>
+        <div class="step"><span class="num">2</span> Ask Zeb about <span id="ask-game" class="hl"></span></div>
+        <div class="ask-grid">
+          <div class="stage"><div id="zeb-stage" class="zeb-stage"></div><div id="zeb-bubble" class="bubble" aria-live="polite"></div></div>
+          <div class="ask-box">
+            <textarea id="question" rows="3" placeholder="Type your question, then press Enter. e.g. Can I take a second queen?"></textarea>
+            <div id="try-chips" class="try"></div>
+            <div class="row tools">
+              <label class="file" id="photo-label" title="Add a photo of the board">📷 Photo<input id="photo" type="file" accept="image/*" capture="environment" /></label>
+              <img id="photo-preview" class="hidden" alt="Attached game photo" />
+              <button id="photo-clear" class="ghost small hidden">Remove photo</button>
+              <button id="btn-mic" class="ghost" title="Ask out loud">🎤 Speak</button>
+              <button id="btn-wake" class="ghost" title="Hands-free: say Hey Zeb, then your question">👂 Hey Zeb: off</button>
+              <span class="spacer"></span>
+              <button id="btn-call" class="primary">🟨 Call it</button>
+            </div>
+          </div>
         </div>
         <div id="ruling"></div>
+        <div id="jumbotron" class="jumbotron hidden"><video playsinline muted preload="auto"></video><div class="jt-label"></div></div>
       </section>
 
       <section class="card learn" id="learn-card">
         <div class="row between">
           <h2>📘 Learn to play <span id="learn-game"></span></h2>
-          <button id="btn-teach" class="primary">Teach me this game</button>
+          <button id="btn-teach">Teach me this game</button>
         </div>
         <p class="muted" id="learn-sub">New to this game? Zeb turns the rulebook into a step-by-step lesson, then walks you through it out loud.</p>
         <div id="lesson"></div>

@@ -79,16 +79,18 @@ async function refreshStatus() {
   const chip = $("chip-device");
   const st = await onDeviceStatus();
   const btn = $("btn-download");
-  const map: Record<string, [string, string]> = {
-    available: ["ok", "On-device: Gemini Nano ready"],
-    downloadable: ["warn", "On-device: model not downloaded"],
-    downloading: ["warn", "On-device: downloading..."],
-    unavailable: ["off", isNativeApp ? "On-device: this phone has no Gemini Nano (cloud only)" : "On-device: unavailable (cloud only)"],
-    unsupported: ["off", "On-device: not supported in this browser (cloud only)"],
+  // Plain words: where does Zeb think? (the tooltip keeps the technical detail)
+  const map: Record<string, [string, string, string]> = {
+    available: ["ok", "🧠 Zeb thinks on this device", "Gemini Nano is ready: rulings run on this device, even offline."],
+    downloadable: ["warn", "☁️ Using the cloud for now", "Gemini Nano isn't downloaded yet. Click Download to make rulings work offline."],
+    downloading: ["warn", "⬇ Downloading Zeb's brain...", "Gemini Nano is downloading."],
+    unavailable: ["cloud", "☁️ Zeb thinks in the cloud", isNativeApp ? "This phone has no Gemini Nano, so rulings come from the cloud." : "Gemini Nano isn't available here, so rulings come from the cloud."],
+    unsupported: ["cloud", "☁️ Zeb thinks in the cloud", "This browser can't run Gemini Nano, so rulings come from the cloud."],
   };
-  const [cls, label] = map[st] ?? ["off", `On-device: ${st}`];
+  const [cls, label, tip] = map[st] ?? ["cloud", "☁️ Zeb thinks in the cloud", `On-device: ${st}`];
   chip.className = `chip ${cls}`;
   chip.textContent = label;
+  chip.title = tip;
   btn.classList.toggle("hidden", st !== "downloadable");
   const net = $("chip-net");
   net.className = `chip ${navigator.onLine ? "ok" : "warn"}`;
@@ -167,8 +169,111 @@ function selectGame(id: string) {
   renderHistory();
   walk = null;
   renderLesson();
+  noteRecent(id);
+  renderQuick();
+  renderTry();
 }
 $<HTMLSelectElement>("game-select").onchange = (e) => selectGame((e.target as HTMLSelectElement).value);
+
+// ---------------- easier picking: search, quick picks, example questions ----------------
+/** Switch game from anywhere (search, chips) and keep the dropdown in step. */
+function pickGame(id: string) {
+  const sel = $<HTMLSelectElement>("game-select");
+  sel.value = id;
+  selectGame(id);
+  ($("game-find") as HTMLInputElement).value = "";
+  $("find-list").classList.add("hidden");
+  $("question").focus({ preventScroll: true });
+}
+
+const POPULAR = ["Chess", "Uno", "Texas Hold 'em", "Monopoly", "Gin Rummy", "Scrabble", "Checkers", "Crazy Eights", "Catan", "Yahtzee", "Cornhole"];
+function recentIds(): string[] {
+  try { return JSON.parse(localStorage.getItem("gameref:recent") ?? "[]"); } catch { return []; }
+}
+function noteRecent(id: string) {
+  try { localStorage.setItem("gameref:recent", JSON.stringify([id, ...recentIds().filter((x) => x !== id)].slice(0, 4))); } catch { /* blocked */ }
+}
+/** Chips under the picker: your recent games first, then popular ones (the current game is highlighted). */
+function renderQuick() {
+  const byName = new Map(games.map((g) => [g.name.toLowerCase(), g]));
+  const picks: Game[] = [];
+  const popular = new Set(POPULAR.map((n) => n.toLowerCase()));
+  // Recent games that aren't already popular go first (so the popular chips never jump around).
+  for (const id of recentIds()) { const g = games.find((x) => x.id === id); if (g && !popular.has(g.name.toLowerCase()) && !picks.includes(g)) picks.push(g); }
+  for (const n of POPULAR) { const g = byName.get(n.toLowerCase()); if (g && !picks.includes(g)) picks.push(g); }
+  $("quick-games").innerHTML = `<span class="muted">Popular:</span>` + picks.slice(0, 12)
+    .map((g) => `<button class="chip-btn${g.id === game?.id ? " on" : ""}" data-id="${esc(g.id)}">${esc(g.name)}</button>`).join("");
+}
+$("quick-games").addEventListener("click", (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-id]");
+  if (b) pickGame(b.dataset.id!);
+});
+
+// Type-ahead search over every game (name, then category), Enter picks the first match.
+const find = $<HTMLInputElement>("game-find");
+function findMatches(q: string): Game[] {
+  const s = q.trim().toLowerCase();
+  if (!s) return [];
+  const starts = games.filter((g) => g.name.toLowerCase().startsWith(s));
+  const has = games.filter((g) => !starts.includes(g) && (g.name.toLowerCase().includes(s) || (g.category ?? "").toLowerCase().includes(s)));
+  return [...starts, ...has].slice(0, 8);
+}
+find.addEventListener("input", () => {
+  const list = $("find-list");
+  const m = findMatches(find.value);
+  list.innerHTML = m.length
+    ? m.map((g) => `<button role="option" data-id="${esc(g.id)}">${esc(g.name)}<span class="muted">${esc(g.category ?? "Your games")}</span></button>`).join("")
+    : find.value.trim() ? `<div class="none muted">No match. <button data-add="1" class="linkish">Find "${esc(find.value.trim())}" on Wikipedia</button></div>` : "";
+  list.classList.toggle("hidden", !list.innerHTML);
+});
+find.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    const m = findMatches(find.value);
+    if (m[0]) { e.preventDefault(); pickGame(m[0].id); }
+  } else if (e.key === "Escape") $("find-list").classList.add("hidden");
+});
+$("find-list").addEventListener("click", (e) => {
+  const t = e.target as HTMLElement;
+  const b = t.closest<HTMLButtonElement>("button[data-id]");
+  if (b) return pickGame(b.dataset.id!);
+  if (t.closest("[data-add]")) {
+    ($("wiki-q") as HTMLInputElement).value = find.value.trim();
+    $("find-list").classList.add("hidden");
+    $("btn-add").click();
+    $("btn-wiki").click();
+  }
+});
+document.addEventListener("click", (e) => {
+  if (!(e.target as HTMLElement).closest(".find-wrap")) $("find-list").classList.add("hidden");
+});
+
+/** Example questions so nobody stares at an empty box. Known games get real ones; others get general ones. */
+const EXAMPLES: Record<string, string[]> = {
+  chess: ["Can I castle out of check?", "Can a pawn move backwards?", "How does en passant work?"],
+  checkers: ["Do I have to jump if I can?", "How does a piece become a king?"],
+  "crazy eights": ["Can I play an 8 on anything?", "What if I can't play a card?"],
+  uno: ["Can I play a Wild Draw Four if I have a matching color?", "Can I stack Draw Twos?", "What if I forget to say Uno?"],
+  "texas hold 'em": ["Does a flush beat a straight?", "What does the small blind pay?", "Can I check after someone bets?"],
+  omaha: ["Can I use just one of my hole cards?", "How many hole cards do I get?"],
+  monopoly: ["Do I collect rent while I'm in jail?", "Can I build hotels unevenly?", "What happens on Free Parking?"],
+  "gin rummy": ["Can I knock with 12 points of deadwood?", "What counts as gin?"],
+  scrabble: ["Can I swap tiles instead of playing?", "Are proper nouns allowed?"],
+  catan: ["Can I trade on someone else's turn?", "What happens when a 7 is rolled?"],
+  yahtzee: ["Can I score a Yahtzee as a full house?", "What is the upper section bonus?"],
+  cornhole: ["How many points for a bag in the hole?", "Do points cancel out?"],
+};
+function renderTry() {
+  const n = game.name.replace(/\s*\(.*?\)\s*/g, " ").trim(); // "Poker (basics & betting)" -> "Poker"
+  const qs = [...(EXAMPLES[n.toLowerCase()] ?? [`How do you win at ${n}?`, `How many players can play ${n}?`]).slice(0, 2), `How do you play ${n}?`];
+  $("try-chips").innerHTML = `<span class="muted">Try:</span>` + qs.map((q) => `<button class="chip-btn" data-q="${esc(q)}">${esc(q)}</button>`).join("");
+  $("ask-game").textContent = game.name;
+}
+$("try-chips").addEventListener("click", (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-q]");
+  if (!b) return;
+  ($("question") as HTMLTextAreaElement).value = b.dataset.q!;
+  $("btn-call").click();
+});
 
 $("btn-delete").onclick = async () => {
   await deleteGame(game.id);
@@ -530,8 +635,12 @@ $("btn-call").onclick = async () => {
   btn.disabled = false;
   refreshStatus();
 };
+// Enter asks (like a chat box); Shift+Enter adds a new line.
 $<HTMLTextAreaElement>("question").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("btn-call").click();
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    if ($<HTMLTextAreaElement>("question").value.trim()) $("btn-call").click();
+  }
 });
 
 function friendly(e: unknown): string {
@@ -684,7 +793,7 @@ $("btn-mic").onclick = async () => {
     setZeb("depends", (e as Error).message);
   }
   b.classList.remove("listening");
-  b.textContent = "🎤 Ask out loud";
+  b.textContent = "🎤 Speak";
 };
 let wakeOn = false;
 $("btn-wake").onclick = async () => {
